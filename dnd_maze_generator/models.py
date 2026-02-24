@@ -8,7 +8,7 @@ from typing import Optional
 
 
 class Direction(enum.Enum):
-    """Cardinal directions for room connections."""
+    """Cardinal directions for node connections."""
 
     NORTH = "N"
     EAST = "E"
@@ -77,70 +77,92 @@ class OwnerType(enum.Enum):
 
 
 @dataclass
-class Connection:
-    """A connection between two rooms in a specific direction.
+class MazeNode:
+    """Base class for all points in the maze (rooms and corridors).
+
+    Both rooms and corridors are first-class nodes in the maze graph.
+    Each node can connect to up to four other nodes via the cardinal
+    directions (N, E, S, W).
 
     Attributes:
-        direction: The cardinal direction of travel (N, E, S, W).
-        destination: The room this connection leads to.
-        length: The distance/time to traverse this connection (in arbitrary units).
+        id: Unique identifier for this node.
+        name: Descriptive name of this node.
+        connections: Dict mapping Direction to neighboring MazeNode objects.
     """
 
-    direction: Direction
-    destination: Room
-    length: int
+    id: int
+    name: str
+    connections: dict[Direction, MazeNode] = field(default_factory=dict)
+
+    def add_connection(self, direction: Direction, destination: MazeNode) -> None:
+        """Add a connection from this node to another node in the given direction."""
+        self.connections[direction] = destination
+
+    @property
+    def connection_count(self) -> int:
+        """Return the number of connections this node has."""
+        return len(self.connections)
+
+    def get_connection(self, direction: Direction) -> Optional[MazeNode]:
+        """Get the neighboring node in a given direction, or None."""
+        return self.connections.get(direction)
+
+    def has_connection(self, direction: Direction) -> bool:
+        """Check if this node has a connection in the given direction."""
+        return direction in self.connections
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, MazeNode):
+            return NotImplemented
+        return self.id == other.id
 
     def __str__(self) -> str:
-        return (
-            f"{self.direction.value} -> {self.destination.name} "
-            f"(length: {self.length})"
-        )
+        directions = ", ".join(d.value for d in self.connections)
+        return f"[{self.id}] {self.name} (Exits: {directions})"
 
 
-@dataclass
-class Room:
-    """A location in the maze/dungeon.
+@dataclass(eq=False)
+class Corridor(MazeNode):
+    """A corridor/passage node in the maze.
+
+    Corridors are first-class nodes that sit between rooms (or other corridors).
+    They represent hallways, tunnels, passages, etc. A corridor can branch off
+    to connect to additional nodes in any cardinal direction, just like a room.
 
     Attributes:
-        id: Unique identifier for the room.
-        name: Descriptive name of the room.
+        length: The distance/time to traverse this corridor (in arbitrary units).
+    """
+
+    length: int = 1
+
+    def __str__(self) -> str:
+        directions = ", ".join(d.value for d in self.connections)
+        return f"[{self.id}] {self.name} (length: {self.length}, Exits: {directions})"
+
+
+@dataclass(eq=False)
+class Room(MazeNode):
+    """A room/location node in the maze.
+
+    Rooms are points in the maze that can contain creatures, treasure, and traps.
+    They connect to corridors (or directly to other rooms) via cardinal directions.
+
+    Attributes:
         row: Grid row position.
         col: Grid column position.
         owner: The creature or NPC inhabiting this room.
         treasure: The type of treasure found in this room.
         trap: The type of trap in this room.
-        connections: Dict mapping Direction to Connection objects.
     """
 
-    id: int
-    name: str
-    row: int
-    col: int
+    row: int = 0
+    col: int = 0
     owner: OwnerType = OwnerType.NONE
     treasure: TreasureType = TreasureType.NONE
     trap: TrapType = TrapType.NONE
-    connections: dict[Direction, Connection] = field(default_factory=dict)
-
-    def add_connection(self, direction: Direction, destination: Room, length: int) -> None:
-        """Add a connection from this room to another room."""
-        self.connections[direction] = Connection(
-            direction=direction,
-            destination=destination,
-            length=length,
-        )
-
-    @property
-    def connection_count(self) -> int:
-        """Return the number of connections this room has."""
-        return len(self.connections)
-
-    def get_connection(self, direction: Direction) -> Optional[Connection]:
-        """Get the connection in a given direction, or None if not connected."""
-        return self.connections.get(direction)
-
-    def has_connection(self, direction: Direction) -> bool:
-        """Check if this room has a connection in the given direction."""
-        return direction in self.connections
 
     def __str__(self) -> str:
         directions = ", ".join(d.value for d in self.connections)
@@ -152,29 +174,27 @@ class Room:
             f"Exits: {directions})"
         )
 
-    def __hash__(self) -> int:
-        return hash(self.id)
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Room):
-            return NotImplemented
-        return self.id == other.id
-
 
 @dataclass
 class Maze:
     """The complete dungeon maze.
 
+    The maze is a graph of interconnected MazeNodes (rooms and corridors).
+    Rooms sit on a grid, and corridors sit between them as intermediary nodes.
+    Both rooms and corridors are points that can connect to other points.
+
     Attributes:
-        width: Number of columns in the maze grid.
-        height: Number of rows in the maze grid.
+        width: Number of columns in the room grid.
+        height: Number of rows in the room grid.
         rooms: 2D list of rooms indexed by [row][col].
+        corridors: List of all corridor nodes in the maze.
         name: Name of this dungeon.
     """
 
     width: int
     height: int
     rooms: list[list[Room]] = field(default_factory=list)
+    corridors: list[Corridor] = field(default_factory=list)
     name: str = "The Dungeon"
 
     @property
@@ -183,9 +203,21 @@ class Maze:
         return [room for row in self.rooms for room in row]
 
     @property
+    def all_nodes(self) -> list[MazeNode]:
+        """Return a flat list of all nodes (rooms + corridors) in the maze."""
+        nodes: list[MazeNode] = list(self.all_rooms)
+        nodes.extend(self.corridors)
+        return nodes
+
+    @property
     def total_rooms(self) -> int:
         """Return the total number of rooms."""
         return self.width * self.height
+
+    @property
+    def total_nodes(self) -> int:
+        """Return the total number of nodes (rooms + corridors)."""
+        return self.total_rooms + len(self.corridors)
 
     def get_room(self, row: int, col: int) -> Optional[Room]:
         """Get a room by its grid coordinates."""
@@ -194,4 +226,7 @@ class Maze:
         return None
 
     def __str__(self) -> str:
-        return f"Maze '{self.name}' ({self.width}x{self.height}, {self.total_rooms} rooms)"
+        return (
+            f"Maze '{self.name}' ({self.width}x{self.height}, "
+            f"{self.total_rooms} rooms, {len(self.corridors)} corridors)"
+        )

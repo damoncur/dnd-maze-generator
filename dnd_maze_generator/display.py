@@ -2,14 +2,25 @@
 
 from __future__ import annotations
 
-from .models import Direction, Maze, Room
+from .models import Corridor, Direction, Maze, MazeNode, Room
+
+
+def _get_corridor_between(room: Room, direction: Direction) -> Corridor | None:
+    """Get the corridor node between a room and its neighbor in a direction.
+
+    Returns the Corridor if the room connects to one in that direction, else None.
+    """
+    neighbor = room.get_connection(direction)
+    if isinstance(neighbor, Corridor):
+        return neighbor
+    return None
 
 
 def render_maze_map(maze: Maze) -> str:
-    """Render a text-based map of the maze showing rooms and connections.
+    """Render a text-based map of the maze showing rooms and corridor connections.
 
-    Each room is shown as a box with its ID. Connections between rooms
-    are shown with lines and their lengths.
+    Each room is shown as a box with its ID. Corridors between rooms are
+    shown with lines and their lengths.
 
     Example output for a 3x3 maze:
         +-----+  3  +-----+     +-----+
@@ -49,11 +60,11 @@ def render_maze_map(maze: Maze) -> str:
             mid_line += f"|{room_label}|"
             bot_line += "+-----+"
 
-            # Horizontal connection to the east
+            # Horizontal connection to the east (via corridor)
             if col_idx < maze.width - 1:
-                east_conn = room.get_connection(Direction.EAST)
-                if east_conn is not None:
-                    length_str = str(east_conn.length).center(3)
+                corridor = _get_corridor_between(room, Direction.EAST)
+                if corridor is not None:
+                    length_str = str(corridor.length).center(3)
                     top_line += f"  {length_str}"
                     mid_line += f"--{length_str}--"
                     bot_line += "     "
@@ -62,14 +73,14 @@ def render_maze_map(maze: Maze) -> str:
                     mid_line += "     "
                     bot_line += "     "
 
-            # Vertical connection to the south
+            # Vertical connection to the south (via corridor)
             if row_idx < maze.height - 1:
-                south_conn = room.get_connection(Direction.SOUTH)
-                if south_conn is not None:
+                corridor = _get_corridor_between(room, Direction.SOUTH)
+                if corridor is not None:
                     center_offset = 3  # Center of the room box
                     pad = " " * center_offset
                     vert_line_1 += pad + "|" + " " * (room_width - center_offset - 1)
-                    length_str = str(south_conn.length)
+                    length_str = str(corridor.length)
                     remaining = room_width - center_offset - len(length_str)
                     vert_line_2 += pad + length_str + " " * remaining
                     vert_line_3 += pad + "|" + " " * (room_width - center_offset - 1)
@@ -96,38 +107,54 @@ def render_maze_map(maze: Maze) -> str:
     return "\n".join(lines)
 
 
-def render_room_details(room: Room) -> str:
-    """Render detailed information about a single room."""
+def render_node_details(node: MazeNode) -> str:
+    """Render detailed information about any maze node (room or corridor)."""
     parts: list[str] = []
-    parts.append(f"=== [{room.id}] {room.name} ===")
-    parts.append(f"  Position: ({room.row}, {room.col})")
-    parts.append(f"  Owner:    {room.owner.value}")
-    parts.append(f"  Treasure: {room.treasure.value}")
-    parts.append(f"  Trap:     {room.trap.value}")
 
-    if room.connections:
-        parts.append(f"  Exits ({room.connection_count}):")
+    if isinstance(node, Room):
+        parts.append(f"=== [Room {node.id}] {node.name} ===")
+        parts.append(f"  Position: ({node.row}, {node.col})")
+        parts.append(f"  Owner:    {node.owner.value}")
+        parts.append(f"  Treasure: {node.treasure.value}")
+        parts.append(f"  Trap:     {node.trap.value}")
+    elif isinstance(node, Corridor):
+        parts.append(f"=== [Corridor {node.id}] {node.name} ===")
+        parts.append(f"  Length:   {node.length}")
+    else:
+        parts.append(f"=== [{node.id}] {node.name} ===")
+
+    if node.connections:
+        parts.append(f"  Exits ({node.connection_count}):")
         for direction in [Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST]:
-            conn = room.get_connection(direction)
-            if conn is not None:
+            neighbor = node.get_connection(direction)
+            if neighbor is not None:
+                node_type = "Corridor" if isinstance(neighbor, Corridor) else "Room"
                 parts.append(
-                    f"    {direction.value} -> [{conn.destination.id}] "
-                    f"{conn.destination.name} (length: {conn.length})"
+                    f"    {direction.value} -> [{node_type} {neighbor.id}] "
+                    f"{neighbor.name}"
                 )
     else:
-        parts.append("  Exits: None (isolated room)")
+        parts.append("  Exits: None (isolated node)")
 
     return "\n".join(parts)
 
 
+def render_room_details(room: Room) -> str:
+    """Render detailed information about a single room (convenience wrapper)."""
+    return render_node_details(room)
+
+
 def render_maze_summary(maze: Maze) -> str:
-    """Render a full summary of the maze with map and all room details."""
+    """Render a full summary of the maze with map and all node details."""
     parts: list[str] = []
 
     # Header
     parts.append("=" * 60)
     parts.append(f"  {maze.name}")
-    parts.append(f"  Size: {maze.width} x {maze.height} ({maze.total_rooms} rooms)")
+    parts.append(
+        f"  Size: {maze.width} x {maze.height} "
+        f"({maze.total_rooms} rooms, {len(maze.corridors)} corridors)"
+    )
     parts.append("=" * 60)
     parts.append("")
 
@@ -140,7 +167,14 @@ def render_maze_summary(maze: Maze) -> str:
     parts.append("--- ROOM DETAILS ---")
     for room in maze.all_rooms:
         parts.append("")
-        parts.append(render_room_details(room))
+        parts.append(render_node_details(room))
+
+    # Corridor details
+    parts.append("")
+    parts.append("--- CORRIDOR DETAILS ---")
+    for corridor in maze.corridors:
+        parts.append("")
+        parts.append(render_node_details(corridor))
 
     parts.append("")
     parts.append("=" * 60)

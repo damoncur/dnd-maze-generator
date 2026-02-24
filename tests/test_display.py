@@ -3,10 +3,19 @@
 from dnd_maze_generator.display import (
     render_maze_map,
     render_maze_summary,
+    render_node_details,
     render_room_details,
 )
 from dnd_maze_generator.generator import generate_maze
-from dnd_maze_generator.models import Maze, OwnerType, Room, TrapType, TreasureType
+from dnd_maze_generator.models import (
+    Corridor,
+    Direction,
+    Maze,
+    OwnerType,
+    Room,
+    TrapType,
+    TreasureType,
+)
 
 
 class TestRenderMazeMap:
@@ -23,8 +32,8 @@ class TestRenderMazeMap:
         assert output == "(empty maze)"
 
 
-class TestRenderRoomDetails:
-    def test_shows_all_attributes(self) -> None:
+class TestRenderNodeDetails:
+    def test_room_shows_all_attributes(self) -> None:
         room = Room(
             id=5,
             name="Dark Crypt",
@@ -34,17 +43,57 @@ class TestRenderRoomDetails:
             treasure=TreasureType.GEMS,
             trap=TrapType.POISON_DART,
         )
-        output = render_room_details(room)
+        output = render_node_details(room)
         assert "Dark Crypt" in output
         assert "Skeleton" in output
         assert "Gems" in output
         assert "Poison Dart Trap" in output
         assert "(1, 2)" in output
+        assert "Room" in output
 
-    def test_isolated_room(self) -> None:
+    def test_corridor_shows_length(self) -> None:
+        corridor = Corridor(id=10, name="Dark Passage", length=7)
+        output = render_node_details(corridor)
+        assert "Dark Passage" in output
+        assert "7" in output
+        assert "Corridor" in output
+
+    def test_room_shows_corridor_neighbor(self) -> None:
+        room = Room(id=0, name="Test Room")
+        corridor = Corridor(id=1, name="Dark Passage", length=5)
+        room.add_connection(Direction.EAST, corridor)
+
+        output = render_node_details(room)
+        assert "Corridor" in output
+        assert "Dark Passage" in output
+
+    def test_corridor_shows_room_neighbors(self) -> None:
+        room_a = Room(id=0, name="Room A")
+        room_b = Room(id=1, name="Room B")
+        corridor = Corridor(id=2, name="Hallway", length=3)
+        corridor.add_connection(Direction.WEST, room_a)
+        corridor.add_connection(Direction.EAST, room_b)
+
+        output = render_node_details(corridor)
+        assert "Room A" in output
+        assert "Room B" in output
+
+    def test_isolated_node(self) -> None:
         room = Room(id=0, name="Lonely Room", row=0, col=0)
-        output = render_room_details(room)
+        output = render_node_details(room)
         assert "isolated" in output.lower() or "None" in output
+
+
+class TestRenderRoomDetails:
+    def test_is_wrapper_for_render_node_details(self) -> None:
+        room = Room(
+            id=5,
+            name="Dark Crypt",
+            row=1,
+            col=2,
+            owner=OwnerType.SKELETON,
+        )
+        assert render_room_details(room) == render_node_details(room)
 
 
 class TestRenderMazeSummary:
@@ -56,3 +105,4 @@ class TestRenderMazeSummary:
         assert "9 rooms" in output
         assert "MAP" in output
         assert "ROOM DETAILS" in output
+        assert "CORRIDOR DETAILS" in output
