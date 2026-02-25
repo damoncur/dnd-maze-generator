@@ -112,6 +112,12 @@ def main(argv: list[str] | None = None) -> None:
         dungeon_name=args.name,
     )
 
+    print(f"Grid: {maze.grid_height}x{maze.grid_width} "
+          f"({maze.rooms_wide}x{maze.rooms_tall} rooms)")
+    if maze.entry:
+        print(f"Entry: [{maze.entry.id}] {maze.entry.name}")
+    print()
+
     print(render_maze_summary(maze))
 
 

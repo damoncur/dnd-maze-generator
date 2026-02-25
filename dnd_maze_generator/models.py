@@ -1,4 +1,18 @@
-"""Data models for the D&D Maze Generator."""
+"""Data models for the D&D Maze Generator.
+
+The maze lives on an expanded grid where:
+- Rooms sit at even-row, even-col positions.
+- Connections sit at mixed-parity positions (between rooms).
+- Odd-row, odd-col positions are always opaque walls.
+
+Each cell, when rendered, is a 3x3 tile:
+    [corner] [N exit] [corner]
+    [W exit] [center] [E exit]
+    [corner] [S exit] [corner]
+
+Corners (positions 1, 3, 7, 9) are always opaque because movement
+is restricted to cardinal directions only.
+"""
 
 from __future__ import annotations
 
@@ -28,6 +42,14 @@ class Direction(enum.Enum):
 
     def __str__(self) -> str:
         return self.value
+
+
+class CellType(enum.Enum):
+    """Types of cells on the expanded maze grid."""
+
+    ROOM = "Room"
+    CONNECTION = "Connection"
+    WALL = "Wall"
 
 
 class TrapType(enum.Enum):
@@ -78,20 +100,24 @@ class OwnerType(enum.Enum):
 
 @dataclass
 class MazeNode:
-    """Base class for all points in the maze (rooms and corridors).
+    """Base class for all traversable points in the maze.
 
-    Both rooms and corridors are first-class nodes in the maze graph.
-    Each node can connect to up to four other nodes via the cardinal
-    directions (N, E, S, W).
+    Both rooms and connections live on the expanded grid.  Each node
+    tracks its grid position (row, col) and connections to neighbors
+    via the four cardinal directions.
 
     Attributes:
         id: Unique identifier for this node.
         name: Descriptive name of this node.
-        connections: Dict mapping Direction to neighboring MazeNode objects.
+        row: Row position on the expanded grid.
+        col: Column position on the expanded grid.
+        connections: Dict mapping Direction to neighboring MazeNode.
     """
 
     id: int
     name: str
+    row: int = 0
+    col: int = 0
     connections: dict[Direction, MazeNode] = field(default_factory=dict)
 
     def add_connection(self, direction: Direction, destination: MazeNode) -> None:
@@ -121,45 +147,49 @@ class MazeNode:
 
     def __str__(self) -> str:
         directions = ", ".join(d.value for d in self.connections)
-        return f"[{self.id}] {self.name} (Exits: {directions})"
+        return f"[{self.id}] {self.name} ({self.row},{self.col}) (Exits: {directions})"
 
 
 @dataclass(eq=False)
-class Corridor(MazeNode):
-    """A corridor/passage node in the maze.
+class Connection(MazeNode):
+    """A connection/junction node on the maze grid.
 
-    Corridors are first-class nodes that sit between rooms (or other corridors).
-    They represent hallways, tunnels, passages, etc. A corridor can branch off
-    to connect to additional nodes in any cardinal direction, just like a room.
+    Connections sit between rooms on the expanded grid.  A connection
+    can be 1-way (dead end), 2-way (passage), 3-way (T-junction),
+    or 4-way (crossroads), depending on how many exits it has.
 
     Attributes:
-        length: The distance/time to traverse this corridor (in arbitrary units).
+        length: The distance/time to traverse this connection.
     """
 
     length: int = 1
 
+    @property
+    def ways(self) -> int:
+        """Number of directions this connection opens to (1-4)."""
+        return self.connection_count
+
     def __str__(self) -> str:
         directions = ", ".join(d.value for d in self.connections)
-        return f"[{self.id}] {self.name} (length: {self.length}, Exits: {directions})"
+        return (
+            f"[{self.id}] {self.name} ({self.row},{self.col}) "
+            f"({self.ways}-way, length: {self.length}, Exits: {directions})"
+        )
 
 
 @dataclass(eq=False)
 class Room(MazeNode):
     """A room/location node in the maze.
 
-    Rooms are points in the maze that can contain creatures, treasure, and traps.
-    They connect to corridors (or directly to other rooms) via cardinal directions.
+    Rooms sit at even-row, even-col positions on the expanded grid.
+    They can contain creatures, treasure, and traps.
 
     Attributes:
-        row: Grid row position.
-        col: Grid column position.
         owner: The creature or NPC inhabiting this room.
         treasure: The type of treasure found in this room.
         trap: The type of trap in this room.
     """
 
-    row: int = 0
-    col: int = 0
     owner: OwnerType = OwnerType.NONE
     treasure: TreasureType = TreasureType.NONE
     trap: TrapType = TrapType.NONE
@@ -167,7 +197,7 @@ class Room(MazeNode):
     def __str__(self) -> str:
         directions = ", ".join(d.value for d in self.connections)
         return (
-            f"[{self.id}] {self.name} "
+            f"[{self.id}] {self.name} ({self.row},{self.col}) "
             f"(Owner: {self.owner.value}, "
             f"Treasure: {self.treasure.value}, "
             f"Trap: {self.trap.value}, "
@@ -177,56 +207,107 @@ class Room(MazeNode):
 
 @dataclass
 class Maze:
-    """The complete dungeon maze.
+    """The complete dungeon maze on an expanded grid.
 
-    The maze is a graph of interconnected MazeNodes (rooms and corridors).
-    Rooms sit on a grid, and corridors sit between them as intermediary nodes.
-    Both rooms and corridors are points that can connect to other points.
+    The grid is structured as:
+    - Even row, even col -> Room
+    - One even / one odd  -> Connection (between adjacent rooms)
+    - Odd row, odd col    -> Wall (opaque corner, always None)
 
     Attributes:
-        width: Number of columns in the room grid.
-        height: Number of rows in the room grid.
-        rooms: 2D list of rooms indexed by [row][col].
-        corridors: List of all corridor nodes in the maze.
+        rooms_wide: Number of room columns (logical width).
+        rooms_tall: Number of room rows (logical height).
+        grid: 2-D list of nodes; None means wall / empty.
+        entry: The starting Connection node (maze entrance).
         name: Name of this dungeon.
     """
 
-    width: int
-    height: int
-    rooms: list[list[Room]] = field(default_factory=list)
-    corridors: list[Corridor] = field(default_factory=list)
+    rooms_wide: int
+    rooms_tall: int
+    grid: list[list[Optional[MazeNode]]] = field(default_factory=list)
+    entry: Optional[Connection] = None
     name: str = "The Dungeon"
+
+    @property
+    def grid_width(self) -> int:
+        """Width of the expanded grid."""
+        if self.rooms_wide <= 0:
+            return 0
+        return 2 * self.rooms_wide - 1
+
+    @property
+    def grid_height(self) -> int:
+        """Height of the expanded grid."""
+        if self.rooms_tall <= 0:
+            return 0
+        return 2 * self.rooms_tall - 1
+
+    def get_cell(self, row: int, col: int) -> Optional[MazeNode]:
+        """Get the node at an expanded-grid position, or None."""
+        if 0 <= row < len(self.grid) and self.grid and 0 <= col < len(self.grid[0]):
+            return self.grid[row][col]
+        return None
+
+    @staticmethod
+    def cell_type_at(row: int, col: int) -> CellType:
+        """Determine the expected cell type from grid coordinates."""
+        if row % 2 == 0 and col % 2 == 0:
+            return CellType.ROOM
+        if row % 2 == 1 and col % 2 == 1:
+            return CellType.WALL
+        return CellType.CONNECTION
+
+    def get_room(self, logical_row: int, logical_col: int) -> Optional[Room]:
+        """Get a room by its logical position (not expanded-grid position)."""
+        grid_row = logical_row * 2
+        grid_col = logical_col * 2
+        cell = self.get_cell(grid_row, grid_col)
+        if isinstance(cell, Room):
+            return cell
+        return None
 
     @property
     def all_rooms(self) -> list[Room]:
         """Return a flat list of all rooms in the maze."""
-        return [room for row in self.rooms for room in row]
+        return [
+            cell
+            for row in self.grid
+            for cell in row
+            if isinstance(cell, Room)
+        ]
+
+    @property
+    def all_connections(self) -> list[Connection]:
+        """Return a flat list of all connection nodes in the maze."""
+        return [
+            cell
+            for row in self.grid
+            for cell in row
+            if isinstance(cell, Connection)
+        ]
 
     @property
     def all_nodes(self) -> list[MazeNode]:
-        """Return a flat list of all nodes (rooms + corridors) in the maze."""
-        nodes: list[MazeNode] = list(self.all_rooms)
-        nodes.extend(self.corridors)
-        return nodes
+        """Return a flat list of all nodes (rooms + connections)."""
+        return [
+            cell
+            for row in self.grid
+            for cell in row
+            if cell is not None
+        ]
 
     @property
     def total_rooms(self) -> int:
-        """Return the total number of rooms."""
-        return self.width * self.height
+        """Return the expected number of rooms (logical width * height)."""
+        return self.rooms_wide * self.rooms_tall
 
     @property
     def total_nodes(self) -> int:
-        """Return the total number of nodes (rooms + corridors)."""
-        return self.total_rooms + len(self.corridors)
-
-    def get_room(self, row: int, col: int) -> Optional[Room]:
-        """Get a room by its grid coordinates."""
-        if 0 <= row < self.height and 0 <= col < self.width:
-            return self.rooms[row][col]
-        return None
+        """Return the total number of active nodes on the grid."""
+        return len(self.all_nodes)
 
     def __str__(self) -> str:
         return (
-            f"Maze '{self.name}' ({self.width}x{self.height}, "
-            f"{self.total_rooms} rooms, {len(self.corridors)} corridors)"
+            f"Maze '{self.name}' ({self.rooms_wide}x{self.rooms_tall} rooms, "
+            f"{len(self.all_connections)} connections)"
         )

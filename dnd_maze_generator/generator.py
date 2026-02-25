@@ -1,4 +1,13 @@
-"""Maze generation algorithm for the D&D Maze Generator."""
+"""Maze generation algorithm for the D&D Maze Generator.
+
+The generator builds an expanded grid where rooms sit at even-row,
+even-col positions and connection nodes sit at the mixed-parity
+positions between them.  Odd-odd positions are opaque walls.
+
+The maze is carved with randomized DFS (recursive backtracker),
+then optional extra connections are added for loops.  Finally a
+boundary connection is chosen as the maze entry point.
+"""
 
 from __future__ import annotations
 
@@ -6,9 +15,10 @@ import random
 from typing import Optional
 
 from .models import (
-    Corridor,
+    Connection,
     Direction,
     Maze,
+    MazeNode,
     OwnerType,
     Room,
     TrapType,
@@ -30,18 +40,18 @@ ROOM_NOUNS = [
     "Barracks", "Cell", "Chapel", "Forge", "Library", "Throne Room",
 ]
 
-CORRIDOR_ADJECTIVES = [
+CONNECTION_ADJECTIVES = [
     "Dark", "Narrow", "Winding", "Crumbling", "Damp", "Shadowy",
     "Long", "Twisted", "Mossy", "Dusty", "Cold", "Echoing",
     "Dim", "Steep", "Hidden", "Ancient", "Worn", "Slippery",
 ]
 
-CORRIDOR_NOUNS = [
+CONNECTION_NOUNS = [
     "Corridor", "Passage", "Tunnel", "Hallway", "Walkway",
     "Path", "Bridge", "Stairway", "Crawlway", "Alley",
 ]
 
-# Direction offsets: (row_delta, col_delta)
+# Direction offsets on the *logical* room grid: (row_delta, col_delta)
 DIRECTION_DELTAS: dict[Direction, tuple[int, int]] = {
     Direction.NORTH: (-1, 0),
     Direction.SOUTH: (1, 0),
@@ -69,16 +79,16 @@ def _generate_room_name(rng: random.Random, used_names: set[str]) -> str:
     return name
 
 
-def _generate_corridor_name(rng: random.Random, used_names: set[str]) -> str:
-    """Generate a unique corridor name."""
+def _generate_connection_name(rng: random.Random, used_names: set[str]) -> str:
+    """Generate a unique connection name."""
     for _ in range(100):
-        adj = rng.choice(CORRIDOR_ADJECTIVES)
-        noun = rng.choice(CORRIDOR_NOUNS)
+        adj = rng.choice(CONNECTION_ADJECTIVES)
+        noun = rng.choice(CONNECTION_NOUNS)
         name = f"The {adj} {noun}"
         if name not in used_names:
             used_names.add(name)
             return name
-    base = f"The {rng.choice(CORRIDOR_ADJECTIVES)} {rng.choice(CORRIDOR_NOUNS)}"
+    base = f"The {rng.choice(CONNECTION_ADJECTIVES)} {rng.choice(CONNECTION_NOUNS)}"
     counter = 2
     while f"{base} {counter}" in used_names:
         counter += 1
@@ -120,43 +130,49 @@ def _random_trap(
     return rng.choice(traps)
 
 
-def _create_corridor_between(
+def _create_connection_between(
     room_a: Room,
     room_b: Room,
     direction: Direction,
     length: int,
-    corridor_id: int,
-    corridor_name: str,
-) -> Corridor:
-    """Create a corridor node between two rooms and wire up all connections.
+    conn_id: int,
+    conn_name: str,
+    grid_row: int,
+    grid_col: int,
+) -> Connection:
+    """Create a connection node between two rooms and wire up all links.
 
-    The corridor sits between room_a and room_b along the given direction:
-        room_a --(direction)--> corridor --(direction)--> room_b
-        room_b --(opposite)--> corridor --(opposite)--> room_a
+    The connection sits on the expanded grid between room_a and room_b:
+        room_a --(direction)--> connection --(direction)--> room_b
+        room_b --(opposite)--> connection --(opposite)--> room_a
 
     Args:
         room_a: The source room.
         room_b: The destination room.
         direction: The direction from room_a to room_b.
-        length: The traversal length of this corridor.
-        corridor_id: Unique ID for the new corridor.
-        corridor_name: Name for the new corridor.
+        length: The traversal length of this connection.
+        conn_id: Unique ID for the new connection.
+        conn_name: Name for the new connection.
+        grid_row: Row on the expanded grid where this connection sits.
+        grid_col: Column on the expanded grid where this connection sits.
 
     Returns:
-        The newly created Corridor node.
+        The newly created Connection node.
     """
-    corridor = Corridor(
-        id=corridor_id,
-        name=corridor_name,
+    connection = Connection(
+        id=conn_id,
+        name=conn_name,
+        row=grid_row,
+        col=grid_col,
         length=length,
     )
-    # room_a <-> corridor in the forward direction
-    room_a.add_connection(direction, corridor)
-    corridor.add_connection(direction.opposite, room_a)
-    # corridor <-> room_b in the forward direction
-    corridor.add_connection(direction, room_b)
-    room_b.add_connection(direction.opposite, corridor)
-    return corridor
+    # room_a <-> connection in the forward direction
+    room_a.add_connection(direction, connection)
+    connection.add_connection(direction.opposite, room_a)
+    # connection <-> room_b in the forward direction
+    connection.add_connection(direction, room_b)
+    room_b.add_connection(direction.opposite, connection)
+    return connection
 
 
 def generate_maze(
@@ -173,16 +189,16 @@ def generate_maze(
 ) -> Maze:
     """Generate a maze using randomized DFS (recursive backtracker).
 
-    Each pair of connected rooms has a Corridor node between them.
-    Corridors are first-class nodes that can themselves have connections,
-    making every point in the maze (room or corridor) a node in the graph.
+    The maze is built on an expanded grid where rooms sit at even
+    positions and connection nodes sit between them.  The maze starts
+    at a connection (the entry point).
 
     Args:
-        width: Number of columns in the maze grid.
-        height: Number of rows in the maze grid.
+        width: Number of room columns (logical width).
+        height: Number of room rows (logical height).
         seed: Random seed for reproducibility. None for random.
-        min_connection_length: Minimum traversal length for corridors.
-        max_connection_length: Maximum traversal length for corridors.
+        min_connection_length: Minimum traversal length for connections.
+        max_connection_length: Maximum traversal length for connections.
         owner_chance: Probability (0-1) that a room has an owner.
         treasure_chance: Probability (0-1) that a room has treasure.
         trap_chance: Probability (0-1) that a room has a trap.
@@ -195,62 +211,76 @@ def generate_maze(
     """
     rng = random.Random(seed)
     used_names: set[str] = set()
-    corridors: list[Corridor] = []
     next_id = 0
 
-    # Step 1: Create the grid of rooms
-    rooms: list[list[Room]] = []
-    for row in range(height):
-        room_row: list[Room] = []
-        for col in range(width):
+    # Compute expanded grid dimensions
+    grid_h = max(2 * height - 1, 0) if height > 0 else 0
+    grid_w = max(2 * width - 1, 0) if width > 0 else 0
+
+    # Initialise grid with None (walls / empty)
+    grid: list[list[Optional[MazeNode]]] = [
+        [None] * grid_w for _ in range(grid_h)
+    ]
+
+    # Step 1: Place rooms at even-row, even-col positions
+    for r in range(height):
+        for c in range(width):
+            gr, gc = r * 2, c * 2
             name = _generate_room_name(rng, used_names)
             room = Room(
                 id=next_id,
                 name=name,
-                row=row,
-                col=col,
+                row=gr,
+                col=gc,
                 owner=_random_owner(rng, owner_chance),
                 treasure=_random_treasure(rng, treasure_chance),
                 trap=_random_trap(rng, trap_chance),
             )
-            room_row.append(room)
+            grid[gr][gc] = room
             next_id += 1
-        rooms.append(room_row)
 
-    # Step 2: Generate maze paths using randomized DFS (recursive backtracker)
+    # Step 2: Randomized DFS to carve connections between rooms
     visited: set[tuple[int, int]] = set()
     stack: list[tuple[int, int]] = []
 
-    # Start from a random cell
     start_row = rng.randint(0, height - 1)
     start_col = rng.randint(0, width - 1)
     visited.add((start_row, start_col))
     stack.append((start_row, start_col))
 
     while stack:
-        current_row, current_col = stack[-1]
-        current_room = rooms[current_row][current_col]
+        cr, cc = stack[-1]
 
-        # Find unvisited neighbors
+        # Find unvisited room neighbours
         neighbors: list[tuple[Direction, int, int]] = []
         for direction, (dr, dc) in DIRECTION_DELTAS.items():
-            nr, nc = current_row + dr, current_col + dc
+            nr, nc = cr + dr, cc + dc
             if 0 <= nr < height and 0 <= nc < width and (nr, nc) not in visited:
                 neighbors.append((direction, nr, nc))
 
         if neighbors:
-            # Choose a random unvisited neighbor
             direction, nr, nc = rng.choice(neighbors)
-            neighbor_room = rooms[nr][nc]
 
-            # Create a corridor node between the two rooms
+            # Grid positions
+            cur_gr, cur_gc = cr * 2, cc * 2
+            nbr_gr, nbr_gc = nr * 2, nc * 2
+            conn_gr = (cur_gr + nbr_gr) // 2
+            conn_gc = (cur_gc + nbr_gc) // 2
+
+            current_room = grid[cur_gr][cur_gc]
+            neighbor_room = grid[nbr_gr][nbr_gc]
+
             length = rng.randint(min_connection_length, max_connection_length)
-            corridor_name = _generate_corridor_name(rng, used_names)
-            corridor = _create_corridor_between(
+            conn_name = _generate_connection_name(rng, used_names)
+
+            assert isinstance(current_room, Room)
+            assert isinstance(neighbor_room, Room)
+            connection = _create_connection_between(
                 current_room, neighbor_room, direction, length,
-                corridor_id=next_id, corridor_name=corridor_name,
+                conn_id=next_id, conn_name=conn_name,
+                grid_row=conn_gr, grid_col=conn_gc,
             )
-            corridors.append(corridor)
+            grid[conn_gr][conn_gc] = connection
             next_id += 1
 
             visited.add((nr, nc))
@@ -259,36 +289,64 @@ def generate_maze(
             stack.pop()
 
     # Step 3: Optionally add extra connections to create loops
-    for row in range(height):
-        for col in range(width):
-            current_room = rooms[row][col]
+    for r in range(height):
+        for c in range(width):
+            cur_gr, cur_gc = r * 2, c * 2
+            current_room = grid[cur_gr][cur_gc]
+            assert isinstance(current_room, Room)
+
             for direction, (dr, dc) in DIRECTION_DELTAS.items():
-                nr, nc = row + dr, col + dc
+                nr, nc = r + dr, c + dc
                 if (
                     0 <= nr < height
                     and 0 <= nc < width
                     and not current_room.has_connection(direction)
                     and rng.random() < extra_connections
                 ):
-                    neighbor_room = rooms[nr][nc]
+                    nbr_gr, nbr_gc = nr * 2, nc * 2
+                    neighbor_room = grid[nbr_gr][nbr_gc]
+                    assert isinstance(neighbor_room, Room)
+
                     if not neighbor_room.has_connection(direction.opposite):
+                        conn_gr = (cur_gr + nbr_gr) // 2
+                        conn_gc = (cur_gc + nbr_gc) // 2
+
                         length = rng.randint(
                             min_connection_length, max_connection_length
                         )
-                        corridor_name = _generate_corridor_name(rng, used_names)
-                        corridor = _create_corridor_between(
+                        conn_name = _generate_connection_name(rng, used_names)
+                        connection = _create_connection_between(
                             current_room, neighbor_room, direction, length,
-                            corridor_id=next_id, corridor_name=corridor_name,
+                            conn_id=next_id, conn_name=conn_name,
+                            grid_row=conn_gr, grid_col=conn_gc,
                         )
-                        corridors.append(corridor)
+                        grid[conn_gr][conn_gc] = connection
                         next_id += 1
 
-    maze = Maze(
-        width=width,
-        height=height,
-        rooms=rooms,
-        corridors=corridors,
+    # Step 4: Choose an entry connection (prefer one on the grid boundary)
+    entry: Optional[Connection] = None
+    all_connections = [
+        cell
+        for row in grid
+        for cell in row
+        if isinstance(cell, Connection)
+    ]
+    for conn in all_connections:
+        if (
+            conn.row == 0
+            or conn.row == grid_h - 1
+            or conn.col == 0
+            or conn.col == grid_w - 1
+        ):
+            entry = conn
+            break
+    if entry is None and all_connections:
+        entry = all_connections[0]
+
+    return Maze(
+        rooms_wide=width,
+        rooms_tall=height,
+        grid=grid,
+        entry=entry,
         name=dungeon_name,
     )
-
-    return maze
