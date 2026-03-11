@@ -8,9 +8,9 @@ Room tile:
     R D R        D = door — shows 'D' when an exit exists, 'R' when solid
 
 Connection tile:
-    C P C        C = corridor boundary (always present)
-    C I C        I = connection ID character
-    C P C        P = passage — shows 'P' when an exit exists, 'C' when solid
+    c p c        c = corridor boundary (always present)
+    c I c        I = connection ID character
+    c p c        p = passage — shows 'p' when an exit exists, 'c' when solid
 
 Wall / empty cell:
     # # #
@@ -26,8 +26,8 @@ from .models import Connection, Direction, Maze, MazeNode, Room
 _WALL = "#"
 _ROOM = "R"
 _DOOR = "D"
-_CORRIDOR = "C"
-_PASSAGE = "P"
+_CORRIDOR = "c"
+_PASSAGE = "p"
 
 
 def _id_to_char(node_id: int) -> str:
@@ -50,9 +50,9 @@ def _render_cell_3x3(cell: MazeNode | None) -> list[list[str]]:
         corner=[R]  S=[D|R]  corner=[R]
 
     Connection layout:
-        corner=[C]  N=[P|C]  corner=[C]
-        W=[P|C]     centre=[ID] E=[P|C]
-        corner=[C]  S=[P|C]  corner=[C]
+        corner=[c]  N=[p|c]  corner=[c]
+        W=[p|c]     centre=[ID] E=[p|c]
+        corner=[c]  S=[p|c]  corner=[c]
     """
     if cell is None:
         return [[_WALL] * 3, [_WALL] * 3, [_WALL] * 3]
@@ -89,7 +89,7 @@ def render_maze_map(maze: Maze) -> str:
 
     Each cell on the expanded grid becomes a 3x3 character block.
     Rooms use ``R``/``D`` boundaries with their ID in the centre.
-    Connections use ``C``/``P`` boundaries with their ID in the centre.
+    Connections use ``c``/``p`` boundaries with their ID in the centre.
     Walls / empty cells are solid ``#`` blocks.
 
     The entry connection (maze start) is marked with ``*``.

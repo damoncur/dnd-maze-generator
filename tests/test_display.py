@@ -61,17 +61,17 @@ class TestRenderCell3x3:
         tile = _render_cell_3x3(conn)
         # Centre is connection ID char
         assert tile[1][1] == "0"
-        # Corners are C (corridor boundary)
-        assert tile[0][0] == "C"
-        assert tile[0][2] == "C"
-        assert tile[2][0] == "C"
-        assert tile[2][2] == "C"
-        # W and E exits are P (passage)
-        assert tile[1][0] == "P"
-        assert tile[1][2] == "P"
-        # N and S are C (closed)
-        assert tile[0][1] == "C"
-        assert tile[2][1] == "C"
+        # Corners are c (corridor boundary)
+        assert tile[0][0] == "c"
+        assert tile[0][2] == "c"
+        assert tile[2][0] == "c"
+        assert tile[2][2] == "c"
+        # W and E exits are p (passage)
+        assert tile[1][0] == "p"
+        assert tile[1][2] == "p"
+        # N and S are c (closed)
+        assert tile[0][1] == "c"
+        assert tile[2][1] == "c"
 
 
 class TestRenderMazeMap:
@@ -107,7 +107,7 @@ class TestRenderMazeMap:
                 elif isinstance(cell, Room):
                     expected = "R"
                 else:
-                    expected = "C"
+                    expected = "c"
                 # All four corners should use the boundary char
                 assert lines[gr * 3][gc * 3] == expected
                 assert lines[gr * 3][gc * 3 + 2] == expected
