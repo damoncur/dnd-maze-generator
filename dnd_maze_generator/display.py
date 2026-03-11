@@ -3,9 +3,9 @@
 Each cell on the expanded grid is rendered as a 3x3 character tile.
 
 Room tile:
-    R D R        R = room boundary (always present)
-    R I R        I = room ID character
-    R D R        D = door — shows 'D' when an exit exists, 'R' when solid
+    + D +        + = room corner
+    | I |        I = room ID character, | = vertical wall
+    + D +        D = door (open exit), - = horizontal wall (closed)
 
 Connection tile:
     c p c        c = corridor boundary (always present)
@@ -24,7 +24,9 @@ from .models import Connection, Direction, Maze, MazeNode, Room
 
 # Characters used in the 3x3 tile rendering
 _WALL = "#"
-_ROOM = "R"
+_ROOM_CORNER = "+"
+_ROOM_H_WALL = "-"
+_ROOM_V_WALL = "|"
 _DOOR = "D"
 _CORRIDOR = "c"
 _PASSAGE = "p"
@@ -45,9 +47,9 @@ def _render_cell_3x3(cell: MazeNode | None) -> list[list[str]]:
     """Render a single cell as a 3x3 character grid.
 
     Room layout:
-        corner=[R]  N=[D|R]  corner=[R]
-        W=[D|R]     centre=[ID] E=[D|R]
-        corner=[R]  S=[D|R]  corner=[R]
+        corner=[+]  N=[D|-]  corner=[+]
+        W=[D|||]    centre=[ID] E=[D|||]
+        corner=[+]  S=[D|-]  corner=[+]
 
     Connection layout:
         corner=[c]  N=[p|c]  corner=[c]
@@ -60,9 +62,18 @@ def _render_cell_3x3(cell: MazeNode | None) -> list[list[str]]:
     centre = _id_to_char(cell.id)
 
     if isinstance(cell, Room):
-        corner = _ROOM
-        open_char = _DOOR
-        closed_char = _ROOM
+        n_s_closed = _ROOM_H_WALL
+        e_w_closed = _ROOM_V_WALL
+        corner = _ROOM_CORNER
+        n = _DOOR if cell.has_connection(Direction.NORTH) else n_s_closed
+        s = _DOOR if cell.has_connection(Direction.SOUTH) else n_s_closed
+        e = _DOOR if cell.has_connection(Direction.EAST) else e_w_closed
+        w = _DOOR if cell.has_connection(Direction.WEST) else e_w_closed
+        return [
+            [corner, n, corner],
+            [w, centre, e],
+            [corner, s, corner],
+        ]
     elif isinstance(cell, Connection):
         corner = _CORRIDOR
         open_char = _PASSAGE
@@ -88,7 +99,7 @@ def render_maze_map(maze: Maze) -> str:
     """Render a 3x3-tile map of the maze.
 
     Each cell on the expanded grid becomes a 3x3 character block.
-    Rooms use ``R``/``D`` boundaries with their ID in the centre.
+    Rooms use ``+``/``-``/``|``/``D`` boundaries with their ID in the centre.
     Connections use ``c``/``p`` boundaries with their ID in the centre.
     Walls / empty cells are solid ``#`` blocks.
 

@@ -27,18 +27,18 @@ class TestRenderCell3x3:
     def test_room_with_no_exits(self) -> None:
         room = Room(id=0, name="R", row=0, col=0)
         tile = _render_cell_3x3(room)
-        # Corners are always R (room boundary)
-        assert tile[0][0] == "R"
-        assert tile[0][2] == "R"
-        assert tile[2][0] == "R"
-        assert tile[2][2] == "R"
+        # Corners are always +
+        assert tile[0][0] == "+"
+        assert tile[0][2] == "+"
+        assert tile[2][0] == "+"
+        assert tile[2][2] == "+"
         # Centre is room ID char
         assert tile[1][1] == "0"
-        # No exits => all cardinal edges are R (closed)
-        assert tile[0][1] == "R"
-        assert tile[1][0] == "R"
-        assert tile[1][2] == "R"
-        assert tile[2][1] == "R"
+        # No exits => horizontal walls are -, vertical walls are |
+        assert tile[0][1] == "-"
+        assert tile[1][0] == "|"
+        assert tile[1][2] == "|"
+        assert tile[2][1] == "-"
 
     def test_room_with_exits(self) -> None:
         room = Room(id=3, name="R", row=0, col=0)
@@ -47,10 +47,10 @@ class TestRenderCell3x3:
         tile = _render_cell_3x3(room)
         # East exit should be D (door)
         assert tile[1][2] == "D"
-        # Other exits still R (closed)
-        assert tile[0][1] == "R"
-        assert tile[1][0] == "R"
-        assert tile[2][1] == "R"
+        # Other exits: - for N/S, | for W
+        assert tile[0][1] == "-"
+        assert tile[1][0] == "|"
+        assert tile[2][1] == "-"
 
     def test_connection_tile(self) -> None:
         conn = Connection(id=0, name="C", row=0, col=1)
@@ -105,7 +105,7 @@ class TestRenderMazeMap:
                 if cell is None:
                     expected = "#"
                 elif isinstance(cell, Room):
-                    expected = "R"
+                    expected = "+"
                 else:
                     expected = "c"
                 # All four corners should use the boundary char
