@@ -1,13 +1,21 @@
 """Text-based display/visualization for the D&D Maze Generator.
 
-Each cell on the expanded grid is rendered as a 3x3 character tile:
+Each cell on the expanded grid is rendered as a 3x3 character tile.
 
-    [#] [N] [#]        # = opaque corner (always wall)
-    [W] [C] [E]        C = cell centre (Room ID or connection symbol)
-    [#] [S] [#]        N/E/S/W = passage (space) or wall (#)
+Room tile:
+    + D +        + = room corner
+    | I |        I = room ID character, | = vertical wall
+    + D +        D = door (open exit), - = horizontal wall (closed)
 
-Corners (positions 1, 3, 7, 9 of the 3x3) are always opaque because
-movement is restricted to cardinal directions only.
+Connection tile:
+    c p c        c = corridor boundary (always present)
+    c I c        I = connection ID character
+    c p c        p = passage — shows 'p' when an exit exists, 'c' when solid
+
+Wall / empty cell:
+    # # #
+    # # #        Solid wall block
+    # # #
 """
 
 from __future__ import annotations
@@ -16,7 +24,12 @@ from .models import Connection, Direction, Maze, MazeNode, Room
 
 # Characters used in the 3x3 tile rendering
 _WALL = "#"
-_OPEN = " "
+_ROOM_CORNER = "+"
+_ROOM_H_WALL = "-"
+_ROOM_V_WALL = "|"
+_DOOR = "D"
+_CORRIDOR = "c"
+_PASSAGE = "p"
 
 
 def _id_to_char(node_id: int) -> str:
@@ -33,31 +46,52 @@ def _id_to_char(node_id: int) -> str:
 def _render_cell_3x3(cell: MazeNode | None) -> list[list[str]]:
     """Render a single cell as a 3x3 character grid.
 
-    Layout (positions 1-9):
-        1=[#]  2=[N exit]  3=[#]
-        4=[W exit]  5=[centre]  6=[E exit]
-        7=[#]  8=[S exit]  9=[#]
+    Room layout:
+        corner=[+]  N=[D|-]  corner=[+]
+        W=[D|||]    centre=[ID] E=[D|||]
+        corner=[+]  S=[D|-]  corner=[+]
+
+    Connection layout:
+        corner=[c]  N=[p|c]  corner=[c]
+        W=[p|c]     centre=[ID] E=[p|c]
+        corner=[c]  S=[p|c]  corner=[c]
     """
     if cell is None:
         return [[_WALL] * 3, [_WALL] * 3, [_WALL] * 3]
 
-    # Determine centre character
-    if isinstance(cell, Room):
-        centre = _id_to_char(cell.id)
-    elif isinstance(cell, Connection):
-        centre = "+"
-    else:
-        centre = "?"
+    centre = _id_to_char(cell.id)
 
-    n = _OPEN if cell.has_connection(Direction.NORTH) else _WALL
-    s = _OPEN if cell.has_connection(Direction.SOUTH) else _WALL
-    e = _OPEN if cell.has_connection(Direction.EAST) else _WALL
-    w = _OPEN if cell.has_connection(Direction.WEST) else _WALL
+    if isinstance(cell, Room):
+        n_s_closed = _ROOM_H_WALL
+        e_w_closed = _ROOM_V_WALL
+        corner = _ROOM_CORNER
+        n = _DOOR if cell.has_connection(Direction.NORTH) else n_s_closed
+        s = _DOOR if cell.has_connection(Direction.SOUTH) else n_s_closed
+        e = _DOOR if cell.has_connection(Direction.EAST) else e_w_closed
+        w = _DOOR if cell.has_connection(Direction.WEST) else e_w_closed
+        return [
+            [corner, n, corner],
+            [w, centre, e],
+            [corner, s, corner],
+        ]
+    elif isinstance(cell, Connection):
+        corner = _CORRIDOR
+        open_char = _PASSAGE
+        closed_char = _CORRIDOR
+    else:
+        corner = _WALL
+        open_char = _WALL
+        closed_char = _WALL
+
+    n = open_char if cell.has_connection(Direction.NORTH) else closed_char
+    s = open_char if cell.has_connection(Direction.SOUTH) else closed_char
+    e = open_char if cell.has_connection(Direction.EAST) else closed_char
+    w = open_char if cell.has_connection(Direction.WEST) else closed_char
 
     return [
-        [_WALL, n, _WALL],
+        [corner, n, corner],
         [w, centre, e],
-        [_WALL, s, _WALL],
+        [corner, s, corner],
     ]
 
 
@@ -65,8 +99,9 @@ def render_maze_map(maze: Maze) -> str:
     """Render a 3x3-tile map of the maze.
 
     Each cell on the expanded grid becomes a 3x3 character block.
-    Rooms show their ID character, connections show ``+``, and
-    walls / empty cells are solid ``#`` blocks.
+    Rooms use ``+``/``-``/``|``/``D`` boundaries with their ID in the centre.
+    Connections use ``c``/``p`` boundaries with their ID in the centre.
+    Walls / empty cells are solid ``#`` blocks.
 
     The entry connection (maze start) is marked with ``*``.
     """
