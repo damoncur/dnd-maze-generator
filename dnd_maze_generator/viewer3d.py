@@ -106,6 +106,10 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
         self.heading = 0.0
         self.pitch = 0.0
 
+        # Current node for maze traversal (IJKM keys)
+        self._current_node: Optional[MazeNode] = None
+        self._location_text: Optional[object] = None  # OnscreenText
+
         self._setup_window()
         self._setup_lighting()
         self._build_maze()
@@ -384,14 +388,13 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
         self.disable_mouse()
 
         # Start at entry if available, otherwise first room
-        start_node: Optional[MazeNode] = None
         if self.maze.entry is not None:
-            start_node = self.maze.entry
+            self._current_node = self.maze.entry
         elif self.maze.all_rooms:
-            start_node = self.maze.all_rooms[0]
+            self._current_node = self.maze.all_rooms[0]
 
-        if start_node is not None:
-            wx, wy = _grid_to_world(start_node.row, start_node.col)
+        if self._current_node is not None:
+            wx, wy = _grid_to_world(self._current_node.row, self._current_node.col)
             self.camera.set_pos(wx, wy, WALL_HEIGHT * 0.45)
         else:
             self.camera.set_pos(0, 0, WALL_HEIGHT * 0.45)
@@ -441,6 +444,12 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
         # Press 'o' for overhead birds-eye view
         self.accept("o", self._toggle_overhead)
 
+        # IJKM for maze graph traversal
+        self.accept("i", self._traverse, [Direction.NORTH])
+        self.accept("m", self._traverse, [Direction.SOUTH])
+        self.accept("j", self._traverse, [Direction.WEST])
+        self.accept("k", self._traverse, [Direction.EAST])
+
         self.taskMgr.add(self._update_camera, "update_camera")
 
     def _set_key(self, key: str, value: bool) -> None:
@@ -450,6 +459,25 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
     def _quit(self) -> None:
         """Exit the viewer."""
         self.userExit()
+
+    def _traverse(self, direction: Direction) -> None:
+        """Move to the neighboring node in the given direction.
+
+        All doors are treated as open/unlocked.  If there is no connection
+        in the requested direction the key press is silently ignored.
+        """
+        if self._current_node is None:
+            return
+        neighbor = self._current_node.get_connection(direction)
+        if neighbor is None:
+            return
+        self._current_node = neighbor
+        wx, wy = _grid_to_world(neighbor.row, neighbor.col)
+        self.camera.set_pos(wx, wy, WALL_HEIGHT * 0.45)
+        self.heading = 0.0
+        self.pitch = 0.0
+        self.camera.set_hpr(0, 0, 0)
+        self._update_location_hud()
 
     def _toggle_overhead(self) -> None:
         """Toggle between first-person and overhead bird's-eye views."""
@@ -463,13 +491,11 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
             self.camera.set_pos(cx, cy, max(view_height, 30))
             self.camera.set_hpr(0, -90, 0)
         else:
-            start_node: Optional[MazeNode] = None
-            if self.maze.entry is not None:
-                start_node = self.maze.entry
-            elif self.maze.all_rooms:
-                start_node = self.maze.all_rooms[0]
-            if start_node is not None:
-                wx, wy = _grid_to_world(start_node.row, start_node.col)
+            # Return to current node (not entry)
+            if self._current_node is not None:
+                wx, wy = _grid_to_world(
+                    self._current_node.row, self._current_node.col
+                )
                 self.camera.set_pos(wx, wy, WALL_HEIGHT * 0.45)
             else:
                 self.camera.set_pos(0, 0, WALL_HEIGHT * 0.45)
@@ -534,6 +560,20 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
 
         return Task.cont
 
+    def _update_location_hud(self) -> None:
+        """Update the on-screen text showing the current node."""
+        if self._location_text is None or self._current_node is None:
+            return
+        node = self._current_node
+        if isinstance(node, Room):
+            loc = f"Room {node.id}: {node.name}"
+        elif isinstance(node, Connection):
+            loc = f"Corridor {node.id} ({node.ways}-way)"
+        else:
+            loc = f"Node {node.id}"
+        exits = ", ".join(d.value for d in node.connections)
+        self._location_text.setText(f"{loc}  |  Exits: {exits}")  # type: ignore[union-attr]
+
     def _add_hud(self) -> None:
         """Add a simple HUD with maze info and controls."""
         from direct.gui.OnscreenText import OnscreenText  # type: ignore[import-untyped]
@@ -547,8 +587,19 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
             align=TextNode.ACenter,
         )
 
+        # Location display — updated on traversal
+        self._location_text = OnscreenText(
+            text="",
+            pos=(0, 0.82),
+            scale=0.05,
+            fg=(1, 1, 0.6, 1),
+            shadow=(0, 0, 0, 0.8),
+            align=TextNode.ACenter,
+        )
+        self._update_location_hud()
+
         controls_text = (
-            "WASD: Move | Mouse: Look | Space/Shift: Up/Down"
+            "WASD: Move | Mouse: Look | IJKM: Traverse N/W/E/S"
             " | O: Overhead | ESC: Quit"
         )
         OnscreenText(
