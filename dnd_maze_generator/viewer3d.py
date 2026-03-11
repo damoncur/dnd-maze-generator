@@ -12,12 +12,14 @@ from direct.showbase.ShowBase import ShowBase  # type: ignore[import-untyped]
 from panda3d.core import (  # type: ignore[import-untyped]
     AmbientLight,
     CardMaker,
+    ClockObject,
     DirectionalLight,
     LColor,
     LVector3,
     NodePath,
     PointLight,
     TextNode,
+    TransparencyAttrib,
     WindowProperties,
 )
 
@@ -26,8 +28,6 @@ from .models import Direction, DoorType, Maze, MazeNode, Room
 # Dimensions for each grid cell in 3D space
 CELL_SIZE = 6.0
 WALL_HEIGHT = 4.0
-WALL_THICKNESS = 0.15
-DOOR_THICKNESS = 0.1
 
 # Colours
 COLOR_ROOM_FLOOR = LColor(0.55, 0.45, 0.35, 1.0)  # warm stone
@@ -41,15 +41,7 @@ DOOR_COLORS: dict[DoorType, LColor] = {
     DoorType.IRON: LColor(0.50, 0.50, 0.55, 1.0),
     DoorType.STEEL: LColor(0.70, 0.70, 0.75, 1.0),
     DoorType.LARGE_ROCK: LColor(0.40, 0.38, 0.35, 1.0),
-    DoorType.HIDDEN: LColor(0.35, 0.30, 0.25, 0.6),  # semi-transparent
-}
-
-# Direction offsets for wall placement
-_DIR_OFFSETS: dict[Direction, tuple[float, float]] = {
-    Direction.NORTH: (0.0, 1.0),
-    Direction.SOUTH: (0.0, -1.0),
-    Direction.EAST: (1.0, 0.0),
-    Direction.WEST: (-1.0, 0.0),
+    DoorType.HIDDEN: LColor(0.35, 0.30, 0.25, 0.5),  # semi-transparent
 }
 
 
@@ -198,6 +190,8 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
         door = _make_card(f"door_{direction.value}", door_width, door_height, color)
         door.reparent_to(cell_np)
         door.set_two_sided(True)
+        if door_type == DoorType.HIDDEN:
+            door.set_transparency(TransparencyAttrib.MAlpha)
 
         half = CELL_SIZE / 2.0
         if direction == Direction.NORTH:
@@ -300,7 +294,7 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
 
     def _update_camera(self, task: object) -> int:
         """Update camera position and orientation each frame."""
-        dt = globalClock.get_dt()  # type: ignore[name-defined]  # noqa: F821
+        dt = ClockObject.get_global_clock().get_dt()
 
         # Mouse look
         if self.mouseWatcherNode.has_mouse():
