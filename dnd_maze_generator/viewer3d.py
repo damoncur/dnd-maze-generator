@@ -102,7 +102,7 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
         super().__init__()
         self.maze = maze
         self.movement_speed = 15.0
-        self.mouse_sensitivity = 0.3
+        self.mouse_sensitivity = 50.0
         self.heading = 0.0
         self.pitch = 0.0
 
