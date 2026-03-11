@@ -455,7 +455,7 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
         """Toggle between first-person and overhead bird's-eye views."""
         self._overhead = not self._overhead
         if self._overhead:
-            max_row = len(self.maze.grid) - 1
+            max_row = len(self.maze.grid) - 1 if self.maze.grid else 0
             max_col = len(self.maze.grid[0]) - 1 if self.maze.grid else 0
             cx = (max_col * CELL_SIZE) / 2.0
             cy = -(max_row * CELL_SIZE) / 2.0
@@ -485,8 +485,8 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
         if not self._overhead and self.mouseWatcherNode.has_mouse():
             mx = self.mouseWatcherNode.get_mouse_x()
             my = self.mouseWatcherNode.get_mouse_y()
-            self.heading -= mx * self.mouse_sensitivity * 100 * dt
-            self.pitch += my * self.mouse_sensitivity * 100 * dt
+            self.heading -= mx * self.mouse_sensitivity
+            self.pitch += my * self.mouse_sensitivity
             self.pitch = max(-89, min(89, self.pitch))
             self.camera.set_hpr(self.heading, self.pitch, 0)
 
