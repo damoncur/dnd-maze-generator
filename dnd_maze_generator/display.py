@@ -1,13 +1,21 @@
 """Text-based display/visualization for the D&D Maze Generator.
 
-Each cell on the expanded grid is rendered as a 3x3 character tile:
+Each cell on the expanded grid is rendered as a 3x3 character tile.
 
-    [#] [N] [#]        # = opaque corner (always wall)
-    [W] [C] [E]        C = cell centre (Room ID or connection symbol)
-    [#] [S] [#]        N/E/S/W = passage (space) or wall (#)
+Room tile:
+    R D R        R = room boundary (always present)
+    R I R        I = room ID character
+    R D R        D = door — shows 'D' when an exit exists, 'R' when solid
 
-Corners (positions 1, 3, 7, 9 of the 3x3) are always opaque because
-movement is restricted to cardinal directions only.
+Connection tile:
+    C P C        C = corridor boundary (always present)
+    C I C        I = connection ID character
+    C P C        P = passage — shows 'P' when an exit exists, 'C' when solid
+
+Wall / empty cell:
+    # # #
+    # # #        Solid wall block
+    # # #
 """
 
 from __future__ import annotations
@@ -16,7 +24,10 @@ from .models import Connection, Direction, Maze, MazeNode, Room
 
 # Characters used in the 3x3 tile rendering
 _WALL = "#"
-_OPEN = " "
+_ROOM = "R"
+_DOOR = "D"
+_CORRIDOR = "C"
+_PASSAGE = "P"
 
 
 def _id_to_char(node_id: int) -> str:
@@ -33,31 +44,43 @@ def _id_to_char(node_id: int) -> str:
 def _render_cell_3x3(cell: MazeNode | None) -> list[list[str]]:
     """Render a single cell as a 3x3 character grid.
 
-    Layout (positions 1-9):
-        1=[#]  2=[N exit]  3=[#]
-        4=[W exit]  5=[centre]  6=[E exit]
-        7=[#]  8=[S exit]  9=[#]
+    Room layout:
+        corner=[R]  N=[D|R]  corner=[R]
+        W=[D|R]     centre=[ID] E=[D|R]
+        corner=[R]  S=[D|R]  corner=[R]
+
+    Connection layout:
+        corner=[C]  N=[P|C]  corner=[C]
+        W=[P|C]     centre=[ID] E=[P|C]
+        corner=[C]  S=[P|C]  corner=[C]
     """
     if cell is None:
         return [[_WALL] * 3, [_WALL] * 3, [_WALL] * 3]
 
-    # Determine centre character
-    if isinstance(cell, Room):
-        centre = _id_to_char(cell.id)
-    elif isinstance(cell, Connection):
-        centre = "+"
-    else:
-        centre = "?"
+    centre = _id_to_char(cell.id)
 
-    n = _OPEN if cell.has_connection(Direction.NORTH) else _WALL
-    s = _OPEN if cell.has_connection(Direction.SOUTH) else _WALL
-    e = _OPEN if cell.has_connection(Direction.EAST) else _WALL
-    w = _OPEN if cell.has_connection(Direction.WEST) else _WALL
+    if isinstance(cell, Room):
+        corner = _ROOM
+        open_char = _DOOR
+        closed_char = _ROOM
+    elif isinstance(cell, Connection):
+        corner = _CORRIDOR
+        open_char = _PASSAGE
+        closed_char = _CORRIDOR
+    else:
+        corner = _WALL
+        open_char = _WALL
+        closed_char = _WALL
+
+    n = open_char if cell.has_connection(Direction.NORTH) else closed_char
+    s = open_char if cell.has_connection(Direction.SOUTH) else closed_char
+    e = open_char if cell.has_connection(Direction.EAST) else closed_char
+    w = open_char if cell.has_connection(Direction.WEST) else closed_char
 
     return [
-        [_WALL, n, _WALL],
+        [corner, n, corner],
         [w, centre, e],
-        [_WALL, s, _WALL],
+        [corner, s, corner],
     ]
 
 
