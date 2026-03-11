@@ -94,6 +94,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=0.2,
         help="Probability (0-1) a door has a trap. Default: 0.2",
     )
+    parser.add_argument(
+        "--view-3d",
+        action="store_true",
+        default=False,
+        help="Launch a Panda3D 3D visualization of the maze.",
+    )
 
     return parser.parse_args(argv)
 
@@ -140,6 +146,18 @@ def main(argv: list[str] | None = None) -> None:
     print()
 
     print(render_maze_summary(maze))
+
+    if args.view_3d:
+        try:
+            from .viewer3d import view_maze_3d
+        except ImportError:
+            print(
+                "Error: panda3d is not installed. "
+                'Install it with: pip install -e ".[view3d]"',
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        view_maze_3d(maze)
 
 
 if __name__ == "__main__":
