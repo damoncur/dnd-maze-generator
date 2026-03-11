@@ -9,7 +9,10 @@ description = "A Dungeons & Dragons maze/dungeon generator with rooms, traps, tr
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-dependencies = [
+dependencies = []
+
+[project.optional-dependencies]
+view3d = [
     "panda3d>=1.10",
 ]
 

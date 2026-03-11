@@ -148,8 +148,15 @@ def main(argv: list[str] | None = None) -> None:
     print(render_maze_summary(maze))
 
     if args.view_3d:
-        from .viewer3d import view_maze_3d
-
+        try:
+            from .viewer3d import view_maze_3d
+        except ImportError:
+            print(
+                "Error: panda3d is not installed. "
+                'Install it with: pip install -e ".[view3d]"',
+                file=sys.stderr,
+            )
+            sys.exit(1)
         view_maze_3d(maze)
 
 
