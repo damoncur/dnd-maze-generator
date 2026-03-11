@@ -27,35 +27,51 @@ class TestRenderCell3x3:
     def test_room_with_no_exits(self) -> None:
         room = Room(id=0, name="R", row=0, col=0)
         tile = _render_cell_3x3(room)
-        # Corners are always walls
-        assert tile[0][0] == "#"
-        assert tile[0][2] == "#"
-        assert tile[2][0] == "#"
-        assert tile[2][2] == "#"
+        # Corners are always +
+        assert tile[0][0] == "+"
+        assert tile[0][2] == "+"
+        assert tile[2][0] == "+"
+        assert tile[2][2] == "+"
         # Centre is room ID char
         assert tile[1][1] == "0"
-        # No exits => all cardinal edges are walls
-        assert tile[0][1] == "#"
-        assert tile[1][0] == "#"
-        assert tile[1][2] == "#"
-        assert tile[2][1] == "#"
+        # No exits => horizontal walls are -, vertical walls are |
+        assert tile[0][1] == "-"
+        assert tile[1][0] == "|"
+        assert tile[1][2] == "|"
+        assert tile[2][1] == "-"
 
     def test_room_with_exits(self) -> None:
         room = Room(id=3, name="R", row=0, col=0)
         conn = Connection(id=10, name="C", row=0, col=1)
         room.add_connection(Direction.EAST, conn)
         tile = _render_cell_3x3(room)
-        # East exit should be open
-        assert tile[1][2] == " "
-        # Other exits still walls
-        assert tile[0][1] == "#"
-        assert tile[1][0] == "#"
-        assert tile[2][1] == "#"
+        # East exit should be D (door)
+        assert tile[1][2] == "D"
+        # Other exits: - for N/S, | for W
+        assert tile[0][1] == "-"
+        assert tile[1][0] == "|"
+        assert tile[2][1] == "-"
 
-    def test_connection_centre_is_plus(self) -> None:
+    def test_connection_tile(self) -> None:
         conn = Connection(id=0, name="C", row=0, col=1)
+        room_a = Room(id=1, name="RA")
+        room_b = Room(id=2, name="RB")
+        conn.add_connection(Direction.WEST, room_a)
+        conn.add_connection(Direction.EAST, room_b)
         tile = _render_cell_3x3(conn)
-        assert tile[1][1] == "+"
+        # Centre is connection ID char
+        assert tile[1][1] == "0"
+        # Corners are c (corridor boundary)
+        assert tile[0][0] == "c"
+        assert tile[0][2] == "c"
+        assert tile[2][0] == "c"
+        assert tile[2][2] == "c"
+        # W and E exits are p (passage)
+        assert tile[1][0] == "p"
+        assert tile[1][2] == "p"
+        # N and S are c (closed)
+        assert tile[0][1] == "c"
+        assert tile[2][1] == "c"
 
 
 class TestRenderMazeMap:
@@ -76,22 +92,27 @@ class TestRenderMazeMap:
         output = render_maze_map(maze)
         assert "*" in output
 
-    def test_opaque_corners(self) -> None:
-        """Corners of every 3x3 tile should be '#'."""
+    def test_tile_corners(self) -> None:
+        """Corners use the correct boundary character for each cell type."""
         maze = generate_maze(width=2, height=2, seed=42)
         output = render_maze_map(maze)
         lines = output.split("\n")
-        # Every tile's corner positions should be '#'
         gh = maze.grid_height
         gw = maze.grid_width
         for gr in range(gh):
             for gc in range(gw):
-                # Top-left and top-right corners of each 3x3 tile
-                assert lines[gr * 3][gc * 3] == "#"
-                assert lines[gr * 3][gc * 3 + 2] == "#"
-                # Bottom-left and bottom-right corners
-                assert lines[gr * 3 + 2][gc * 3] == "#"
-                assert lines[gr * 3 + 2][gc * 3 + 2] == "#"
+                cell = maze.grid[gr][gc]
+                if cell is None:
+                    expected = "#"
+                elif isinstance(cell, Room):
+                    expected = "+"
+                else:
+                    expected = "c"
+                # All four corners should use the boundary char
+                assert lines[gr * 3][gc * 3] == expected
+                assert lines[gr * 3][gc * 3 + 2] == expected
+                assert lines[gr * 3 + 2][gc * 3] == expected
+                assert lines[gr * 3 + 2][gc * 3 + 2] == expected
 
 
 class TestRenderNodeDetails:
