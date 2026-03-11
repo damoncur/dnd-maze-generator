@@ -511,10 +511,16 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
         if not self._overhead and self.mouseWatcherNode.has_mouse():
             mx = self.mouseWatcherNode.get_mouse_x()
             my = self.mouseWatcherNode.get_mouse_y()
-            self.heading -= mx * self.mouse_sensitivity
-            self.pitch += my * self.mouse_sensitivity
-            self.pitch = max(-89, min(89, self.pitch))
-            self.camera.set_hpr(self.heading, self.pitch, 0)
+
+            # Dead zone: ignore tiny displacements caused by re-centering
+            # jitter.  Only apply rotation when the mouse has actually moved
+            # a noticeable amount from the window centre (0, 0).
+            dead_zone = 0.002
+            if abs(mx) > dead_zone or abs(my) > dead_zone:
+                self.heading -= mx * self.mouse_sensitivity
+                self.pitch += my * self.mouse_sensitivity
+                self.pitch = max(-89, min(89, self.pitch))
+                self.camera.set_hpr(self.heading, self.pitch, 0)
 
             # Re-center the mouse
             self.win.move_pointer(0, self.center_x, self.center_y)
