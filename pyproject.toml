@@ -9,6 +9,9 @@ description = "A Dungeons & Dragons maze/dungeon generator with rooms, traps, tr
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
+dependencies = [
+    "panda3d>=1.10",
+]
 
 [project.scripts]
 dnd-maze-generator = "dnd_maze_generator.cli:main"

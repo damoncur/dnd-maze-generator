@@ -19,6 +19,7 @@ class TestParseArgs:
         assert args.door_chance == 0.5
         assert args.lock_chance == 0.3
         assert args.door_trap_chance == 0.2
+        assert args.view_3d is False
 
     def test_custom_size(self) -> None:
         args = parse_args(["-W", "10", "-H", "8"])
