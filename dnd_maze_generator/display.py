@@ -155,10 +155,16 @@ def render_node_details(node: MazeNode) -> str:
             neighbor = node.get_connection(direction)
             if neighbor is not None:
                 node_type = "Connection" if isinstance(neighbor, Connection) else "Room"
-                parts.append(
+                exit_line = (
                     f"    {direction.value} -> [{node_type} {neighbor.id}] "
                     f"{neighbor.name}"
                 )
+                parts.append(exit_line)
+                # Show door details if this is a room with a door at this exit
+                if isinstance(node, Room):
+                    door = node.get_door(direction)
+                    if door is not None:
+                        parts.append(f"      Door: {door}")
     else:
         parts.append("  Exits: None (isolated node)")
 

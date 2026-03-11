@@ -17,6 +17,10 @@ from typing import Optional
 from .models import (
     Connection,
     Direction,
+    Door,
+    DoorTrapType,
+    DoorType,
+    LockType,
     Maze,
     MazeNode,
     OwnerType,
@@ -130,6 +134,38 @@ def _random_trap(
     return rng.choice(traps)
 
 
+def _random_door(
+    rng: random.Random,
+    door_chance: float = 0.5,
+    lock_chance: float = 0.3,
+    door_trap_chance: float = 0.2,
+) -> Optional[Door]:
+    """Randomly create a door for a room exit.
+
+    Args:
+        rng: Random number generator.
+        door_chance: Probability (0-1) that a door exists at all.
+        lock_chance: Probability (0-1) that the door has a lock.
+        door_trap_chance: Probability (0-1) that the door has a trap.
+
+    Returns:
+        A Door if one is generated, or None.
+    """
+    if rng.random() > door_chance:
+        return None
+    door_type = rng.choice(list(DoorType))
+    lock = LockType.NONE
+    if rng.random() < lock_chance:
+        locks = [lt for lt in LockType if lt != LockType.NONE]
+        lock = rng.choice(locks)
+    trap = DoorTrapType.NONE
+    if rng.random() < door_trap_chance:
+        traps = [dt for dt in DoorTrapType if dt != DoorTrapType.NONE]
+        trap = rng.choice(traps)
+    is_open = rng.random() < 0.3  # 30% chance door is open
+    return Door(door_type=door_type, lock=lock, trap=trap, is_open=is_open)
+
+
 def _create_connection_between(
     room_a: Room,
     room_b: Room,
@@ -139,6 +175,8 @@ def _create_connection_between(
     conn_name: str,
     grid_row: int,
     grid_col: int,
+    door_a: Optional[Door] = None,
+    door_b: Optional[Door] = None,
 ) -> Connection:
     """Create a connection node between two rooms and wire up all links.
 
@@ -155,6 +193,8 @@ def _create_connection_between(
         conn_name: Name for the new connection.
         grid_row: Row on the expanded grid where this connection sits.
         grid_col: Column on the expanded grid where this connection sits.
+        door_a: Optional door on room_a's exit toward the connection.
+        door_b: Optional door on room_b's exit toward the connection.
 
     Returns:
         The newly created Connection node.
@@ -172,6 +212,11 @@ def _create_connection_between(
     # connection <-> room_b in the forward direction
     connection.add_connection(direction, room_b)
     room_b.add_connection(direction.opposite, connection)
+    # Attach doors to room exits
+    if door_a is not None:
+        room_a.doors[direction] = door_a
+    if door_b is not None:
+        room_b.doors[direction.opposite] = door_b
     return connection
 
 
@@ -186,6 +231,9 @@ def generate_maze(
     trap_chance: float = 0.25,
     extra_connections: float = 0.1,
     dungeon_name: str = "The Dungeon",
+    door_chance: float = 0.5,
+    lock_chance: float = 0.3,
+    door_trap_chance: float = 0.2,
 ) -> Maze:
     """Generate a maze using randomized DFS (recursive backtracker).
 
@@ -205,6 +253,9 @@ def generate_maze(
         extra_connections: Probability (0-1) of adding extra connections
             beyond the spanning tree to create loops.
         dungeon_name: Name for the dungeon.
+        door_chance: Probability (0-1) that a room exit has a door.
+        lock_chance: Probability (0-1) that a door has a lock.
+        door_trap_chance: Probability (0-1) that a door has a trap.
 
     Returns:
         A fully generated Maze object.
@@ -275,10 +326,13 @@ def generate_maze(
 
             assert isinstance(current_room, Room)
             assert isinstance(neighbor_room, Room)
+            door_a = _random_door(rng, door_chance, lock_chance, door_trap_chance)
+            door_b = _random_door(rng, door_chance, lock_chance, door_trap_chance)
             connection = _create_connection_between(
                 current_room, neighbor_room, direction, length,
                 conn_id=next_id, conn_name=conn_name,
                 grid_row=conn_gr, grid_col=conn_gc,
+                door_a=door_a, door_b=door_b,
             )
             grid[conn_gr][conn_gc] = connection
             next_id += 1
@@ -315,10 +369,17 @@ def generate_maze(
                             min_connection_length, max_connection_length
                         )
                         conn_name = _generate_connection_name(rng, used_names)
+                        door_a = _random_door(
+                            rng, door_chance, lock_chance, door_trap_chance
+                        )
+                        door_b = _random_door(
+                            rng, door_chance, lock_chance, door_trap_chance
+                        )
                         connection = _create_connection_between(
                             current_room, neighbor_room, direction, length,
                             conn_id=next_id, conn_name=conn_name,
                             grid_row=conn_gr, grid_col=conn_gc,
+                            door_a=door_a, door_b=door_b,
                         )
                         grid[conn_gr][conn_gc] = connection
                         next_id += 1

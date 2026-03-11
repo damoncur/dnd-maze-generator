@@ -76,6 +76,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="The Dungeon",
         help='Name of the dungeon. Default: "The Dungeon"',
     )
+    parser.add_argument(
+        "--door-chance",
+        type=float,
+        default=0.5,
+        help="Probability (0-1) a room exit has a door. Default: 0.5",
+    )
+    parser.add_argument(
+        "--lock-chance",
+        type=float,
+        default=0.3,
+        help="Probability (0-1) a door has a lock. Default: 0.3",
+    )
+    parser.add_argument(
+        "--door-trap-chance",
+        type=float,
+        default=0.2,
+        help="Probability (0-1) a door has a trap. Default: 0.2",
+    )
 
     return parser.parse_args(argv)
 
@@ -110,6 +128,9 @@ def main(argv: list[str] | None = None) -> None:
         trap_chance=args.trap_chance,
         extra_connections=args.extra_connections,
         dungeon_name=args.name,
+        door_chance=args.door_chance,
+        lock_chance=args.lock_chance,
+        door_trap_chance=args.door_trap_chance,
     )
 
     print(f"Grid: {maze.grid_height}x{maze.grid_width} "

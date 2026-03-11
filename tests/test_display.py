@@ -11,6 +11,9 @@ from dnd_maze_generator.generator import generate_maze
 from dnd_maze_generator.models import (
     Connection,
     Direction,
+    Door,
+    DoorType,
+    LockType,
     Maze,
     OwnerType,
     Room,
@@ -165,6 +168,26 @@ class TestRenderNodeDetails:
         output = render_node_details(conn)
         assert "Room A" in output
         assert "Room B" in output
+
+    def test_room_shows_door_details(self) -> None:
+        room = Room(id=0, name="Test Room")
+        conn = Connection(id=1, name="Passage", length=5)
+        room.add_connection(Direction.EAST, conn)
+        door = Door(door_type=DoorType.IRON, lock=LockType.KEY)
+        room.doors[Direction.EAST] = door
+
+        output = render_node_details(room)
+        assert "Door:" in output
+        assert "Iron" in output
+        assert "Key Lock" in output
+
+    def test_room_without_door_no_door_line(self) -> None:
+        room = Room(id=0, name="Test Room")
+        conn = Connection(id=1, name="Passage", length=5)
+        room.add_connection(Direction.EAST, conn)
+
+        output = render_node_details(room)
+        assert "Door:" not in output
 
     def test_isolated_node(self) -> None:
         room = Room(id=0, name="Lonely Room", row=0, col=0)
