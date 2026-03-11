@@ -13,13 +13,24 @@ A procedural dungeon maze generator for Dungeons & Dragons. Generates interconne
 - **Reproducible** mazes via seed parameter
 - **CLI interface** with full customization
 
-## Installation
+## How to Run
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/damoncur/dnd-maze-generator.git
+cd dnd-maze-generator
+```
+
+### 2. Install the package
+
+Requires **Python 3.10+**. Install in editable mode so code changes take effect immediately:
 
 ```bash
 pip install -e .
 ```
 
-## Quick Start
+### 3. Generate a maze
 
 ```bash
 # Generate a default 5x5 maze
@@ -30,6 +41,15 @@ python -m dnd_maze_generator -W 3 -H 3 -s 42
 
 # Name your dungeon
 python -m dnd_maze_generator -W 4 -H 4 -s 100 -n "Dragon's Lair"
+
+# Generate with doors, locks, and traps on every exit
+python -m dnd_maze_generator -W 3 -H 3 -s 42 --door-chance 1.0 --lock-chance 0.5 --door-trap-chance 0.5
+```
+
+### 4. View all options
+
+```bash
+python -m dnd_maze_generator --help
 ```
 
 ## CLI Options
