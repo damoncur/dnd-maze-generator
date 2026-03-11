@@ -16,6 +16,9 @@ class TestParseArgs:
         assert args.trap_chance == 0.25
         assert args.extra_connections == 0.1
         assert args.name == "The Dungeon"
+        assert args.door_chance == 0.5
+        assert args.lock_chance == 0.3
+        assert args.door_trap_chance == 0.2
 
     def test_custom_size(self) -> None:
         args = parse_args(["-W", "10", "-H", "8"])

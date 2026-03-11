@@ -1,7 +1,17 @@
 """Tests for the maze generator."""
 
 from dnd_maze_generator.generator import generate_maze
-from dnd_maze_generator.models import CellType, Connection, Direction, Maze, MazeNode, Room
+from dnd_maze_generator.models import (
+    CellType,
+    Connection,
+    Direction,
+    DoorTrapType,
+    DoorType,
+    LockType,
+    Maze,
+    MazeNode,
+    Room,
+)
 
 
 class TestGenerateMaze:
@@ -199,3 +209,72 @@ class TestGenerateMaze:
                     assert isinstance(cell, Connection), (
                         f"Expected Connection at ({gr},{gc})"
                     )
+
+    def test_doors_generated_with_full_chance(self) -> None:
+        """With door_chance=1.0, every room exit should have a door."""
+        maze = generate_maze(
+            width=3, height=3, seed=42,
+            door_chance=1.0, lock_chance=0.0, door_trap_chance=0.0,
+        )
+        for room in maze.all_rooms:
+            for direction in room.connections:
+                assert room.has_door(direction), (
+                    f"Room {room.id} missing door at {direction.value}"
+                )
+
+    def test_no_doors_generated_with_zero_chance(self) -> None:
+        """With door_chance=0.0, no room exits should have doors."""
+        maze = generate_maze(
+            width=3, height=3, seed=42,
+            door_chance=0.0,
+        )
+        for room in maze.all_rooms:
+            assert room.doors == {}, f"Room {room.id} has unexpected doors"
+
+    def test_door_types_valid(self) -> None:
+        """All generated doors should have valid DoorType values."""
+        maze = generate_maze(
+            width=3, height=3, seed=42,
+            door_chance=1.0,
+        )
+        valid_types = set(DoorType)
+        for room in maze.all_rooms:
+            for door in room.doors.values():
+                assert door.door_type in valid_types
+
+    def test_door_locks_with_full_chance(self) -> None:
+        """With lock_chance=1.0, every door should have a lock (not NONE)."""
+        maze = generate_maze(
+            width=3, height=3, seed=42,
+            door_chance=1.0, lock_chance=1.0,
+        )
+        for room in maze.all_rooms:
+            for door in room.doors.values():
+                assert door.lock != LockType.NONE
+
+    def test_door_traps_with_full_chance(self) -> None:
+        """With door_trap_chance=1.0, every door should have a trap (not NONE)."""
+        maze = generate_maze(
+            width=3, height=3, seed=42,
+            door_chance=1.0, door_trap_chance=1.0,
+        )
+        for room in maze.all_rooms:
+            for door in room.doors.values():
+                assert door.trap != DoorTrapType.NONE
+
+    def test_door_references_room_and_corridor(self) -> None:
+        """Each generated door should reference its room and corridor."""
+        maze = generate_maze(
+            width=3, height=3, seed=42,
+            door_chance=1.0,
+        )
+        for room in maze.all_rooms:
+            for direction, door in room.doors.items():
+                assert door.room is room, (
+                    f"Door at Room {room.id} {direction.value} does not reference its room"
+                )
+                assert isinstance(door.corridor, Connection), (
+                    f"Door at Room {room.id} {direction.value} does not reference a corridor"
+                )
+                # The corridor should be the connection in that direction
+                assert door.corridor is room.connections[direction]

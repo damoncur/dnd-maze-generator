@@ -4,6 +4,10 @@ from dnd_maze_generator.models import (
     CellType,
     Connection,
     Direction,
+    Door,
+    DoorTrapType,
+    DoorType,
+    LockType,
     Maze,
     MazeNode,
     OwnerType,
@@ -100,6 +104,83 @@ class TestMazeNode:
         assert room == conn
 
 
+class TestDoor:
+    def test_default_door(self) -> None:
+        door = Door()
+        assert door.door_type == DoorType.WOODEN
+        assert door.lock == LockType.NONE
+        assert door.trap == DoorTrapType.NONE
+        assert door.is_open is False
+        assert door.room is None
+        assert door.corridor is None
+
+    def test_custom_door(self) -> None:
+        door = Door(
+            door_type=DoorType.IRON,
+            lock=LockType.KEY,
+            trap=DoorTrapType.POISON_NEEDLE,
+            is_open=True,
+        )
+        assert door.door_type == DoorType.IRON
+        assert door.lock == LockType.KEY
+        assert door.trap == DoorTrapType.POISON_NEEDLE
+        assert door.is_open is True
+
+    def test_room_and_corridor_references(self) -> None:
+        room = Room(id=0, name="Test Room")
+        conn = Connection(id=1, name="Passage", length=5)
+        door = Door(door_type=DoorType.IRON, room=room, corridor=conn)
+        assert door.room is room
+        assert door.corridor is conn
+
+    def test_str_basic(self) -> None:
+        door = Door(door_type=DoorType.WOODEN)
+        s = str(door)
+        assert "Wooden" in s
+        assert "Closed" in s
+
+    def test_str_open(self) -> None:
+        door = Door(door_type=DoorType.STEEL, is_open=True)
+        s = str(door)
+        assert "Steel" in s
+        assert "Open" in s
+
+    def test_str_with_lock_and_trap(self) -> None:
+        door = Door(
+            door_type=DoorType.IRON,
+            lock=LockType.MAGIC,
+            trap=DoorTrapType.ACID_SPRAY,
+        )
+        s = str(door)
+        assert "Iron" in s
+        assert "Magic Lock" in s
+        assert "Acid Spray" in s
+
+    def test_str_with_room_and_corridor(self) -> None:
+        room = Room(id=0, name="Dark Chamber")
+        conn = Connection(id=1, name="Stone Passage", length=5)
+        door = Door(door_type=DoorType.STEEL, room=room, corridor=conn)
+        s = str(door)
+        assert "Steel" in s
+        assert "Room: [0] Dark Chamber" in s
+        assert "Corridor: [1] Stone Passage" in s
+
+    def test_all_door_types(self) -> None:
+        expected = {"Large Rock", "Wooden", "Iron", "Steel", "Hidden"}
+        actual = {dt.value for dt in DoorType}
+        assert actual == expected
+
+    def test_all_lock_types(self) -> None:
+        expected = {"None", "Key Lock", "Combination Lock", "Magic Lock", "Barred", "Padlock"}
+        actual = {lt.value for lt in LockType}
+        assert actual == expected
+
+    def test_all_door_trap_types(self) -> None:
+        expected = {"None", "Poison Needle", "Acid Spray", "Alarm", "Blade", "Shock"}
+        actual = {dt.value for dt in DoorTrapType}
+        assert actual == expected
+
+
 class TestRoom:
     def _make_room(self, room_id: int = 0, name: str = "Test Room") -> Room:
         return Room(id=room_id, name=name, row=0, col=0)
@@ -110,6 +191,7 @@ class TestRoom:
         assert room.treasure == TreasureType.NONE
         assert room.trap == TrapType.NONE
         assert room.connections == {}
+        assert room.doors == {}
 
     def test_connect_to_connection(self) -> None:
         room = self._make_room(0, "Room")
@@ -121,6 +203,19 @@ class TestRoom:
         assert neighbor is not None
         assert isinstance(neighbor, Connection)
         assert neighbor.length == 5
+
+    def test_door_on_exit(self) -> None:
+        room = self._make_room(0, "Room")
+        door = Door(door_type=DoorType.IRON, lock=LockType.KEY)
+        room.doors[Direction.EAST] = door
+
+        assert room.has_door(Direction.EAST)
+        assert not room.has_door(Direction.WEST)
+        retrieved = room.get_door(Direction.EAST)
+        assert retrieved is not None
+        assert retrieved.door_type == DoorType.IRON
+        assert retrieved.lock == LockType.KEY
+        assert room.get_door(Direction.WEST) is None
 
     def test_str(self) -> None:
         room = Room(

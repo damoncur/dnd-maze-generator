@@ -52,6 +52,76 @@ class CellType(enum.Enum):
     WALL = "Wall"
 
 
+class DoorType(enum.Enum):
+    """Types of doors that can be found at room exits."""
+
+    LARGE_ROCK = "Large Rock"
+    WOODEN = "Wooden"
+    IRON = "Iron"
+    STEEL = "Steel"
+    HIDDEN = "Hidden"
+
+
+class LockType(enum.Enum):
+    """Types of locks that can be found on doors."""
+
+    NONE = "None"
+    KEY = "Key Lock"
+    COMBINATION = "Combination Lock"
+    MAGIC = "Magic Lock"
+    BARRED = "Barred"
+    PADLOCK = "Padlock"
+
+
+class DoorTrapType(enum.Enum):
+    """Types of traps that can be found on doors."""
+
+    NONE = "None"
+    POISON_NEEDLE = "Poison Needle"
+    ACID_SPRAY = "Acid Spray"
+    ALARM = "Alarm"
+    BLADE = "Blade"
+    SHOCK = "Shock"
+
+
+@dataclass
+class Door:
+    """A door at a room exit.
+
+    Doors sit at room exits and can have a type, lock, trap,
+    and open/closed state.  Each door references the room it
+    belongs to and the corridor (connection) it leads to.
+
+    Attributes:
+        door_type: The material/style of the door.
+        lock: The type of lock on the door.
+        trap: The type of trap on the door.
+        is_open: Whether the door is currently open.
+        room: The room this door belongs to (set after creation).
+        corridor: The corridor this door leads to (set after creation).
+    """
+
+    door_type: DoorType = DoorType.WOODEN
+    lock: LockType = LockType.NONE
+    trap: DoorTrapType = DoorTrapType.NONE
+    is_open: bool = False
+    room: Optional[Room] = field(default=None, repr=False)
+    corridor: Optional[Connection] = field(default=None, repr=False)
+
+    def __str__(self) -> str:
+        state = "Open" if self.is_open else "Closed"
+        parts = [f"{self.door_type.value} Door ({state})"]
+        if self.room is not None:
+            parts.append(f"Room: [{self.room.id}] {self.room.name}")
+        if self.corridor is not None:
+            parts.append(f"Corridor: [{self.corridor.id}] {self.corridor.name}")
+        if self.lock != LockType.NONE:
+            parts.append(f"Lock: {self.lock.value}")
+        if self.trap != DoorTrapType.NONE:
+            parts.append(f"Trap: {self.trap.value}")
+        return ", ".join(parts)
+
+
 class TrapType(enum.Enum):
     """Types of traps that can be found in a room."""
 
@@ -182,17 +252,28 @@ class Room(MazeNode):
     """A room/location node in the maze.
 
     Rooms sit at even-row, even-col positions on the expanded grid.
-    They can contain creatures, treasure, and traps.
+    They can contain creatures, treasure, and traps.  Each exit
+    direction can optionally have a Door.
 
     Attributes:
         owner: The creature or NPC inhabiting this room.
         treasure: The type of treasure found in this room.
         trap: The type of trap in this room.
+        doors: Dict mapping Direction to a Door at that exit.
     """
 
     owner: OwnerType = OwnerType.NONE
     treasure: TreasureType = TreasureType.NONE
     trap: TrapType = TrapType.NONE
+    doors: dict[Direction, Door] = field(default_factory=dict)
+
+    def get_door(self, direction: Direction) -> Optional[Door]:
+        """Get the door at a given exit direction, or None."""
+        return self.doors.get(direction)
+
+    def has_door(self, direction: Direction) -> bool:
+        """Check if this room has a door at the given exit."""
+        return direction in self.doors
 
     def __str__(self) -> str:
         directions = ", ".join(d.value for d in self.connections)
