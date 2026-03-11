@@ -212,10 +212,14 @@ def _create_connection_between(
     # connection <-> room_b in the forward direction
     connection.add_connection(direction, room_b)
     room_b.add_connection(direction.opposite, connection)
-    # Attach doors to room exits
+    # Attach doors to room exits and set back-references
     if door_a is not None:
+        door_a.room = room_a
+        door_a.corridor = connection
         room_a.doors[direction] = door_a
     if door_b is not None:
+        door_b.room = room_b
+        door_b.corridor = connection
         room_b.doors[direction.opposite] = door_b
     return connection
 

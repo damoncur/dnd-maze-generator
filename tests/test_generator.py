@@ -261,3 +261,20 @@ class TestGenerateMaze:
         for room in maze.all_rooms:
             for door in room.doors.values():
                 assert door.trap != DoorTrapType.NONE
+
+    def test_door_references_room_and_corridor(self) -> None:
+        """Each generated door should reference its room and corridor."""
+        maze = generate_maze(
+            width=3, height=3, seed=42,
+            door_chance=1.0,
+        )
+        for room in maze.all_rooms:
+            for direction, door in room.doors.items():
+                assert door.room is room, (
+                    f"Door at Room {room.id} {direction.value} does not reference its room"
+                )
+                assert isinstance(door.corridor, Connection), (
+                    f"Door at Room {room.id} {direction.value} does not reference a corridor"
+                )
+                # The corridor should be the connection in that direction
+                assert door.corridor is room.connections[direction]

@@ -89,23 +89,32 @@ class Door:
     """A door at a room exit.
 
     Doors sit at room exits and can have a type, lock, trap,
-    and open/closed state.
+    and open/closed state.  Each door references the room it
+    belongs to and the corridor (connection) it leads to.
 
     Attributes:
         door_type: The material/style of the door.
         lock: The type of lock on the door.
         trap: The type of trap on the door.
         is_open: Whether the door is currently open.
+        room: The room this door belongs to (set after creation).
+        corridor: The corridor this door leads to (set after creation).
     """
 
     door_type: DoorType = DoorType.WOODEN
     lock: LockType = LockType.NONE
     trap: DoorTrapType = DoorTrapType.NONE
     is_open: bool = False
+    room: Optional[Room] = field(default=None, repr=False)
+    corridor: Optional[Connection] = field(default=None, repr=False)
 
     def __str__(self) -> str:
         state = "Open" if self.is_open else "Closed"
         parts = [f"{self.door_type.value} Door ({state})"]
+        if self.room is not None:
+            parts.append(f"Room: [{self.room.id}] {self.room.name}")
+        if self.corridor is not None:
+            parts.append(f"Corridor: [{self.corridor.id}] {self.corridor.name}")
         if self.lock != LockType.NONE:
             parts.append(f"Lock: {self.lock.value}")
         if self.trap != DoorTrapType.NONE:

@@ -111,6 +111,8 @@ class TestDoor:
         assert door.lock == LockType.NONE
         assert door.trap == DoorTrapType.NONE
         assert door.is_open is False
+        assert door.room is None
+        assert door.corridor is None
 
     def test_custom_door(self) -> None:
         door = Door(
@@ -123,6 +125,13 @@ class TestDoor:
         assert door.lock == LockType.KEY
         assert door.trap == DoorTrapType.POISON_NEEDLE
         assert door.is_open is True
+
+    def test_room_and_corridor_references(self) -> None:
+        room = Room(id=0, name="Test Room")
+        conn = Connection(id=1, name="Passage", length=5)
+        door = Door(door_type=DoorType.IRON, room=room, corridor=conn)
+        assert door.room is room
+        assert door.corridor is conn
 
     def test_str_basic(self) -> None:
         door = Door(door_type=DoorType.WOODEN)
@@ -146,6 +155,15 @@ class TestDoor:
         assert "Iron" in s
         assert "Magic Lock" in s
         assert "Acid Spray" in s
+
+    def test_str_with_room_and_corridor(self) -> None:
+        room = Room(id=0, name="Dark Chamber")
+        conn = Connection(id=1, name="Stone Passage", length=5)
+        door = Door(door_type=DoorType.STEEL, room=room, corridor=conn)
+        s = str(door)
+        assert "Steel" in s
+        assert "Room: [0] Dark Chamber" in s
+        assert "Corridor: [1] Stone Passage" in s
 
     def test_all_door_types(self) -> None:
         expected = {"Large Rock", "Wooden", "Iron", "Steel", "Hidden"}
