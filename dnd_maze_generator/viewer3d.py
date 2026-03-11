@@ -24,7 +24,7 @@ from panda3d.core import (  # type: ignore[import-untyped]
     WindowProperties,
 )
 
-from .models import Direction, DoorType, Maze, MazeNode, Room
+from .models import Connection, Direction, DoorType, Maze, MazeNode, Room
 
 # Dimensions for each grid cell in 3D space
 CELL_SIZE = 6.0
@@ -192,6 +192,9 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
                 continue
             self._build_wall(cell_np, wx, wy, direction)
 
+        # Add a floating label with the node type and ID
+        self._build_label(cell_np, node, wx, wy)
+
         # Add a point light inside rooms for atmosphere
         if is_room:
             plight = PointLight(f"light_{node.id}")
@@ -348,6 +351,33 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
         if door_type == DoorType.HIDDEN:
             door.set_transparency(TransparencyAttrib.MAlpha)
         door.reparent_to(cell_np)
+
+    def _build_label(
+        self, cell_np: NodePath, node: MazeNode, wx: float, wy: float
+    ) -> None:
+        """Add a floating 3D text label showing the node type and ID."""
+        if isinstance(node, Room):
+            label_text = f"Room {node.id}"
+            fg = LColor(1.0, 1.0, 0.6, 1.0)  # warm yellow
+        elif isinstance(node, Connection):
+            label_text = f"Cor {node.id}"
+            fg = LColor(0.6, 0.8, 1.0, 1.0)  # light blue
+        else:
+            label_text = f"#{node.id}"
+            fg = LColor(1.0, 1.0, 1.0, 1.0)
+
+        tn = TextNode(f"label_{node.id}")
+        tn.set_text(label_text)
+        tn.set_align(TextNode.ACenter)
+        tn.set_text_color(fg)
+        tn.set_shadow_color(0, 0, 0, 0.8)
+        tn.set_shadow(0.06, 0.06)
+
+        label_np = cell_np.attach_new_node(tn)
+        label_np.set_pos(wx, wy, WALL_HEIGHT * 0.55)
+        label_np.set_scale(0.5)
+        label_np.set_billboard_point_eye()  # always face camera
+        label_np.set_light_off()  # ignore scene lighting so text is readable
 
     def _setup_camera(self) -> None:
         """Position camera at the maze entry for first-person view."""
