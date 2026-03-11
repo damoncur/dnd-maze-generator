@@ -16,6 +16,7 @@ from panda3d.core import (  # type: ignore[import-untyped]
     DirectionalLight,
     LColor,
     LVector3,
+    LVertex,
     NodePath,
     PointLight,
     TextNode,
@@ -45,13 +46,40 @@ DOOR_COLORS: dict[DoorType, LColor] = {
 }
 
 
-def _make_card(name: str, width: float, height: float, color: LColor) -> NodePath:
-    """Create a colored rectangular card (quad)."""
+def _node_key(wx: float, wy: float) -> str:
+    """Create a short unique key from world coordinates."""
+    return f"{wx:.0f}_{wy:.0f}"
+
+
+def _make_quad(
+    name: str,
+    ll: LVertex,
+    lr: LVertex,
+    ur: LVertex,
+    ul: LVertex,
+    color: LColor,
+) -> NodePath:
+    """Create a colored quad from four explicit 3D corner vertices.
+
+    Vertices should be specified in counter-clockwise order when viewed
+    from the front face (the side the normal points toward).
+
+    Args:
+        name: Node name.
+        ll: Lower-left corner.
+        lr: Lower-right corner.
+        ur: Upper-right corner.
+        ul: Upper-left corner.
+        color: RGBA color.
+    """
     cm = CardMaker(name)
-    cm.set_frame(-width / 2, width / 2, -height / 2, height / 2)
+    cm.set_frame(ll, lr, ur, ul)
     cm.set_color(color)
+    cm.set_has_normals(True)
     node = cm.generate()
-    return NodePath(node)
+    np = NodePath(node)
+    np.set_two_sided(True)
+    return np
 
 
 def _grid_to_world(row: int, col: int) -> tuple[float, float]:
@@ -91,18 +119,19 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
         props.set_title(f"D&D Maze: {self.maze.name}")
         props.set_size(1280, 720)
         self.win.request_properties(props)
+        self.set_background_color(0.05, 0.05, 0.1, 1.0)  # dark blue-black
 
     def _setup_lighting(self) -> None:
         """Set up ambient and directional lighting."""
-        # Ambient light for base visibility
+        # Bright ambient light so everything is visible
         ambient = AmbientLight("ambient")
-        ambient.set_color(LColor(0.3, 0.3, 0.3, 1.0))
+        ambient.set_color(LColor(0.45, 0.45, 0.45, 1.0))
         ambient_np = self.render.attach_new_node(ambient)
         self.render.set_light(ambient_np)
 
         # Directional light from above
         sun = DirectionalLight("sun")
-        sun.set_color(LColor(0.7, 0.65, 0.6, 1.0))
+        sun.set_color(LColor(0.6, 0.55, 0.5, 1.0))
         sun_np = self.render.attach_new_node(sun)
         sun_np.set_hpr(45, -60, 0)
         self.render.set_light(sun_np)
@@ -123,34 +152,45 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
     ) -> None:
         """Build floor, walls, ceiling, and doors for one grid cell."""
         cell_np = parent.attach_new_node(f"cell_{node.id}")
-        cell_np.set_pos(wx, wy, 0)
 
         is_room = isinstance(node, Room)
         floor_color = COLOR_ROOM_FLOOR if is_room else COLOR_CORRIDOR_FLOOR
+        half = CELL_SIZE / 2.0
 
-        # Floor
-        floor = _make_card(f"floor_{node.id}", CELL_SIZE, CELL_SIZE, floor_color)
+        # Floor: flat quad at z=0 in the XY plane
+        floor = _make_quad(
+            f"floor_{node.id}",
+            LVertex(wx - half, wy - half, 0),
+            LVertex(wx + half, wy - half, 0),
+            LVertex(wx + half, wy + half, 0),
+            LVertex(wx - half, wy + half, 0),
+            floor_color,
+        )
         floor.reparent_to(cell_np)
-        floor.set_p(-90)  # lay flat
-        floor.set_pos(0, 0, 0)
 
-        # Ceiling
-        ceiling = _make_card(f"ceiling_{node.id}", CELL_SIZE, CELL_SIZE, COLOR_CEILING)
+        # Ceiling: flat quad at z=WALL_HEIGHT
+        ceiling = _make_quad(
+            f"ceiling_{node.id}",
+            LVertex(wx - half, wy + half, WALL_HEIGHT),
+            LVertex(wx + half, wy + half, WALL_HEIGHT),
+            LVertex(wx + half, wy - half, WALL_HEIGHT),
+            LVertex(wx - half, wy - half, WALL_HEIGHT),
+            COLOR_CEILING,
+        )
         ceiling.reparent_to(cell_np)
-        ceiling.set_p(90)  # lay flat facing down
-        ceiling.set_pos(0, 0, WALL_HEIGHT)
 
         # Walls on sides without exits
-        for direction in [Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST]:
+        all_dirs = [Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST]
+        for direction in all_dirs:
             if node.has_connection(direction):
-                # There's an exit here — check for doors
+                # There is an exit here -- check for doors
                 if is_room:
                     assert isinstance(node, Room)
                     door = node.get_door(direction)
                     if door is not None:
-                        self._build_door(cell_np, direction, door.door_type)
+                        self._build_door(cell_np, wx, wy, direction, door.door_type)
                 continue
-            self._build_wall(cell_np, direction)
+            self._build_wall(cell_np, wx, wy, direction)
 
         # Add a point light inside rooms for atmosphere
         if is_room:
@@ -158,76 +198,156 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
             plight.set_color(LColor(0.8, 0.7, 0.5, 1.0))
             plight.set_attenuation((1.0, 0.05, 0.01))
             plight_np = cell_np.attach_new_node(plight)
-            plight_np.set_pos(0, 0, WALL_HEIGHT * 0.8)
+            plight_np.set_pos(wx, wy, WALL_HEIGHT * 0.8)
             self.render.set_light(plight_np)
 
-    def _build_wall(self, cell_np: NodePath, direction: Direction) -> None:
-        """Place a wall on the given side of a cell."""
-        wall = _make_card(f"wall_{direction.value}", CELL_SIZE, WALL_HEIGHT, COLOR_WALL)
-        wall.reparent_to(cell_np)
-        wall.set_two_sided(True)
-
+    def _build_wall(
+        self, cell_np: NodePath, wx: float, wy: float, direction: Direction
+    ) -> None:
+        """Place a wall on the given side of a cell using explicit vertices."""
         half = CELL_SIZE / 2.0
-        if direction == Direction.NORTH:
-            wall.set_pos(0, half, WALL_HEIGHT / 2)
-            wall.set_h(0)
-        elif direction == Direction.SOUTH:
-            wall.set_pos(0, -half, WALL_HEIGHT / 2)
-            wall.set_h(180)
-        elif direction == Direction.EAST:
-            wall.set_pos(half, 0, WALL_HEIGHT / 2)
-            wall.set_h(-90)
-        elif direction == Direction.WEST:
-            wall.set_pos(-half, 0, WALL_HEIGHT / 2)
-            wall.set_h(90)
+        h = WALL_HEIGHT
+        key = _node_key(wx, wy)
 
-    def _build_door(self, cell_np: NodePath, direction: Direction, door_type: DoorType) -> None:
-        """Place a door on the given side of a cell."""
+        if direction == Direction.NORTH:
+            wall = _make_quad(
+                f"wall_N_{key}",
+                LVertex(wx + half, wy + half, 0),
+                LVertex(wx - half, wy + half, 0),
+                LVertex(wx - half, wy + half, h),
+                LVertex(wx + half, wy + half, h),
+                COLOR_WALL,
+            )
+        elif direction == Direction.SOUTH:
+            wall = _make_quad(
+                f"wall_S_{key}",
+                LVertex(wx - half, wy - half, 0),
+                LVertex(wx + half, wy - half, 0),
+                LVertex(wx + half, wy - half, h),
+                LVertex(wx - half, wy - half, h),
+                COLOR_WALL,
+            )
+        elif direction == Direction.EAST:
+            wall = _make_quad(
+                f"wall_E_{key}",
+                LVertex(wx + half, wy - half, 0),
+                LVertex(wx + half, wy + half, 0),
+                LVertex(wx + half, wy + half, h),
+                LVertex(wx + half, wy - half, h),
+                COLOR_WALL,
+            )
+        else:
+            wall = _make_quad(
+                f"wall_W_{key}",
+                LVertex(wx - half, wy + half, 0),
+                LVertex(wx - half, wy - half, 0),
+                LVertex(wx - half, wy - half, h),
+                LVertex(wx - half, wy + half, h),
+                COLOR_WALL,
+            )
+        wall.reparent_to(cell_np)
+
+    def _build_door(
+        self,
+        cell_np: NodePath,
+        wx: float,
+        wy: float,
+        direction: Direction,
+        door_type: DoorType,
+    ) -> None:
+        """Place a door and lintel on the given side of a cell."""
         color = DOOR_COLORS.get(door_type, DOOR_COLORS[DoorType.WOODEN])
-        # Door is slightly smaller than the full opening
-        door_width = CELL_SIZE * 0.7
-        door_height = WALL_HEIGHT * 0.8
-        door = _make_card(f"door_{direction.value}", door_width, door_height, color)
-        door.reparent_to(cell_np)
-        door.set_two_sided(True)
+        half = CELL_SIZE / 2.0
+        dw = CELL_SIZE * 0.35  # half door width
+        dh = WALL_HEIGHT * 0.8  # door height
+        lintel_bottom = dh
+        lintel_top = WALL_HEIGHT
+        key = _node_key(wx, wy)
+
+        if direction == Direction.NORTH:
+            y = wy + half
+            door = _make_quad(
+                f"door_N_{key}",
+                LVertex(wx + dw, y, 0),
+                LVertex(wx - dw, y, 0),
+                LVertex(wx - dw, y, dh),
+                LVertex(wx + dw, y, dh),
+                color,
+            )
+            if lintel_top - lintel_bottom > 0.1:
+                lintel = _make_quad(
+                    f"lintel_N_{key}",
+                    LVertex(wx + half, y, lintel_bottom),
+                    LVertex(wx - half, y, lintel_bottom),
+                    LVertex(wx - half, y, lintel_top),
+                    LVertex(wx + half, y, lintel_top),
+                    COLOR_WALL,
+                )
+                lintel.reparent_to(cell_np)
+        elif direction == Direction.SOUTH:
+            y = wy - half
+            door = _make_quad(
+                f"door_S_{key}",
+                LVertex(wx - dw, y, 0),
+                LVertex(wx + dw, y, 0),
+                LVertex(wx + dw, y, dh),
+                LVertex(wx - dw, y, dh),
+                color,
+            )
+            if lintel_top - lintel_bottom > 0.1:
+                lintel = _make_quad(
+                    f"lintel_S_{key}",
+                    LVertex(wx - half, y, lintel_bottom),
+                    LVertex(wx + half, y, lintel_bottom),
+                    LVertex(wx + half, y, lintel_top),
+                    LVertex(wx - half, y, lintel_top),
+                    COLOR_WALL,
+                )
+                lintel.reparent_to(cell_np)
+        elif direction == Direction.EAST:
+            x = wx + half
+            door = _make_quad(
+                f"door_E_{key}",
+                LVertex(x, wy - dw, 0),
+                LVertex(x, wy + dw, 0),
+                LVertex(x, wy + dw, dh),
+                LVertex(x, wy - dw, dh),
+                color,
+            )
+            if lintel_top - lintel_bottom > 0.1:
+                lintel = _make_quad(
+                    f"lintel_E_{key}",
+                    LVertex(x, wy - half, lintel_bottom),
+                    LVertex(x, wy + half, lintel_bottom),
+                    LVertex(x, wy + half, lintel_top),
+                    LVertex(x, wy - half, lintel_top),
+                    COLOR_WALL,
+                )
+                lintel.reparent_to(cell_np)
+        else:
+            x = wx - half
+            door = _make_quad(
+                f"door_W_{key}",
+                LVertex(x, wy + dw, 0),
+                LVertex(x, wy - dw, 0),
+                LVertex(x, wy - dw, dh),
+                LVertex(x, wy + dw, dh),
+                color,
+            )
+            if lintel_top - lintel_bottom > 0.1:
+                lintel = _make_quad(
+                    f"lintel_W_{key}",
+                    LVertex(x, wy + half, lintel_bottom),
+                    LVertex(x, wy - half, lintel_bottom),
+                    LVertex(x, wy - half, lintel_top),
+                    LVertex(x, wy + half, lintel_top),
+                    COLOR_WALL,
+                )
+                lintel.reparent_to(cell_np)
+
         if door_type == DoorType.HIDDEN:
             door.set_transparency(TransparencyAttrib.MAlpha)
-
-        half = CELL_SIZE / 2.0
-        if direction == Direction.NORTH:
-            door.set_pos(0, half, door_height / 2)
-            door.set_h(0)
-        elif direction == Direction.SOUTH:
-            door.set_pos(0, -half, door_height / 2)
-            door.set_h(180)
-        elif direction == Direction.EAST:
-            door.set_pos(half, 0, door_height / 2)
-            door.set_h(-90)
-        elif direction == Direction.WEST:
-            door.set_pos(-half, 0, door_height / 2)
-            door.set_h(90)
-
-        # Add lintel (wall above door)
-        lintel_height = WALL_HEIGHT - door_height
-        if lintel_height > 0.1:
-            lintel = _make_card(
-                f"lintel_{direction.value}", CELL_SIZE, lintel_height, COLOR_WALL
-            )
-            lintel.reparent_to(cell_np)
-            lintel.set_two_sided(True)
-            lintel_z = door_height + lintel_height / 2
-            if direction == Direction.NORTH:
-                lintel.set_pos(0, half, lintel_z)
-                lintel.set_h(0)
-            elif direction == Direction.SOUTH:
-                lintel.set_pos(0, -half, lintel_z)
-                lintel.set_h(180)
-            elif direction == Direction.EAST:
-                lintel.set_pos(half, 0, lintel_z)
-                lintel.set_h(-90)
-            elif direction == Direction.WEST:
-                lintel.set_pos(-half, 0, lintel_z)
-                lintel.set_h(90)
+        door.reparent_to(cell_np)
 
     def _setup_camera(self) -> None:
         """Position camera at the maze entry for first-person view."""
@@ -242,13 +362,17 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
 
         if start_node is not None:
             wx, wy = _grid_to_world(start_node.row, start_node.col)
-            self.camera.set_pos(wx, wy, WALL_HEIGHT * 0.5)
+            self.camera.set_pos(wx, wy, WALL_HEIGHT * 0.45)
         else:
-            self.camera.set_pos(0, 0, WALL_HEIGHT * 0.5)
+            self.camera.set_pos(0, 0, WALL_HEIGHT * 0.45)
 
         self.camera.set_hpr(0, 0, 0)
         self.heading = 0.0
         self.pitch = 0.0
+
+        # Adjust near/far clip for dungeon-scale rendering
+        self.camLens.set_near_far(0.1, 500.0)
+        self.camLens.set_fov(75)
 
         # Hide the default cursor and capture mouse
         props = WindowProperties()
@@ -256,6 +380,8 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
         self.win.request_properties(props)
         self.center_x = self.win.get_x_size() // 2
         self.center_y = self.win.get_y_size() // 2
+
+        self._overhead = False
 
     def _setup_controls(self) -> None:
         """Set up WASD movement and mouse look controls."""
@@ -282,6 +408,9 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
         self.accept("shift-up", self._set_key, ["down", False])
         self.accept("escape", self._quit)
 
+        # Press 'o' for overhead birds-eye view
+        self.accept("o", self._toggle_overhead)
+
         self.taskMgr.add(self._update_camera, "update_camera")
 
     def _set_key(self, key: str, value: bool) -> None:
@@ -292,12 +421,38 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
         """Exit the viewer."""
         self.userExit()
 
+    def _toggle_overhead(self) -> None:
+        """Toggle between first-person and overhead bird's-eye views."""
+        self._overhead = not self._overhead
+        if self._overhead:
+            max_row = len(self.maze.grid) - 1
+            max_col = len(self.maze.grid[0]) - 1 if self.maze.grid else 0
+            cx = (max_col * CELL_SIZE) / 2.0
+            cy = -(max_row * CELL_SIZE) / 2.0
+            view_height = max(max_row, max_col) * CELL_SIZE * 1.2
+            self.camera.set_pos(cx, cy, max(view_height, 30))
+            self.camera.set_hpr(0, -90, 0)
+        else:
+            start_node: Optional[MazeNode] = None
+            if self.maze.entry is not None:
+                start_node = self.maze.entry
+            elif self.maze.all_rooms:
+                start_node = self.maze.all_rooms[0]
+            if start_node is not None:
+                wx, wy = _grid_to_world(start_node.row, start_node.col)
+                self.camera.set_pos(wx, wy, WALL_HEIGHT * 0.45)
+            else:
+                self.camera.set_pos(0, 0, WALL_HEIGHT * 0.45)
+            self.heading = 0.0
+            self.pitch = 0.0
+            self.camera.set_hpr(0, 0, 0)
+
     def _update_camera(self, task: object) -> int:
         """Update camera position and orientation each frame."""
         dt = ClockObject.get_global_clock().get_dt()
 
-        # Mouse look
-        if self.mouseWatcherNode.has_mouse():
+        # Mouse look (only in first-person mode)
+        if not self._overhead and self.mouseWatcherNode.has_mouse():
             mx = self.mouseWatcherNode.get_mouse_x()
             my = self.mouseWatcherNode.get_mouse_y()
             self.heading -= mx * self.mouse_sensitivity * 100 * dt
@@ -310,23 +465,38 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
 
         # Movement
         speed = self.movement_speed * dt
-        forward = self.camera.get_quat().get_forward()
-        right = self.camera.get_quat().get_right()
-        up = LVector3(0, 0, 1)
+        if self._overhead:
+            move = LVector3(0, 0, 0)
+            if self.key_map["forward"]:
+                move += LVector3(0, 1, 0) * speed
+            if self.key_map["backward"]:
+                move += LVector3(0, -1, 0) * speed
+            if self.key_map["right"]:
+                move += LVector3(1, 0, 0) * speed
+            if self.key_map["left"]:
+                move += LVector3(-1, 0, 0) * speed
+            if self.key_map["up"]:
+                move += LVector3(0, 0, 1) * speed
+            if self.key_map["down"]:
+                move += LVector3(0, 0, -1) * speed
+        else:
+            forward = self.camera.get_quat().get_forward()
+            right = self.camera.get_quat().get_right()
+            up = LVector3(0, 0, 1)
 
-        move = LVector3(0, 0, 0)
-        if self.key_map["forward"]:
-            move += forward * speed
-        if self.key_map["backward"]:
-            move -= forward * speed
-        if self.key_map["right"]:
-            move += right * speed
-        if self.key_map["left"]:
-            move -= right * speed
-        if self.key_map["up"]:
-            move += up * speed
-        if self.key_map["down"]:
-            move -= up * speed
+            move = LVector3(0, 0, 0)
+            if self.key_map["forward"]:
+                move += forward * speed
+            if self.key_map["backward"]:
+                move -= forward * speed
+            if self.key_map["right"]:
+                move += right * speed
+            if self.key_map["left"]:
+                move -= right * speed
+            if self.key_map["up"]:
+                move += up * speed
+            if self.key_map["down"]:
+                move -= up * speed
 
         self.camera.set_pos(self.camera.get_pos() + move)
 
@@ -347,7 +517,10 @@ class MazeViewer(ShowBase):  # type: ignore[misc]
             align=TextNode.ACenter,
         )
 
-        controls_text = "WASD: Move | Mouse: Look | Space/Shift: Up/Down | ESC: Quit"
+        controls_text = (
+            "WASD: Move | Mouse: Look | Space/Shift: Up/Down"
+            " | O: Overhead | ESC: Quit"
+        )
         OnscreenText(
             text=controls_text,
             pos=(0, -0.95),
