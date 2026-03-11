@@ -88,8 +88,9 @@ def render_maze_map(maze: Maze) -> str:
     """Render a 3x3-tile map of the maze.
 
     Each cell on the expanded grid becomes a 3x3 character block.
-    Rooms show their ID character, connections show ``+``, and
-    walls / empty cells are solid ``#`` blocks.
+    Rooms use ``R``/``D`` boundaries with their ID in the centre.
+    Connections use ``C``/``P`` boundaries with their ID in the centre.
+    Walls / empty cells are solid ``#`` blocks.
 
     The entry connection (maze start) is marked with ``*``.
     """
